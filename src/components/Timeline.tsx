@@ -16,6 +16,8 @@ interface TimelineProps {
   isPlaying: boolean;
   setIsPlaying: (playing: boolean) => void;
   isSequence?: boolean;
+  isLooping?: boolean;
+  setIsLooping?: (looping: boolean) => void;
   onDistributeMarkers: () => void;
   onDetectLoop?: () => Promise<string | null>;
 }
@@ -64,13 +66,18 @@ const TimelineComponent: React.FC<TimelineProps> = ({
   isPlaying,
   setIsPlaying,
   isSequence = false,
+  isLooping: propIsLooping,
+  setIsLooping: propSetIsLooping,
   onDistributeMarkers,
   onDetectLoop,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const [isLooping, setIsLooping] = useState(true);
+  const [localIsLooping, setLocalIsLooping] = useState(true);
+  const isLooping = propIsLooping !== undefined ? propIsLooping : localIsLooping;
+  const setIsLooping = propSetIsLooping || setLocalIsLooping;
+
   const [isDetectingLoop, setIsDetectingLoop] = useState(false);
   const [loopStatusMsg, setLoopStatusMsg] = useState<string | null>(null);
 

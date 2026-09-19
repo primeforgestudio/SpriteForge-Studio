@@ -67,6 +67,7 @@ export const App: React.FC = () => {
   const [cropEnd, setCropEnd] = useState(0);
   const [markers, setMarkers] = useState<number[]>([]);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isLooping, setIsLooping] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [statePreset, setStatePreset] = useState<StatePreset>('standard');
@@ -387,6 +388,7 @@ export const App: React.FC = () => {
       const frameDuration = 1000 / (loader.metadata.fps || 30);
 
       const tickSequence = (now: number) => {
+        if (isCancelled) return;
         const elapsed = now - lastTime;
         if (elapsed >= frameDuration) {
           const advance = Math.floor(elapsed / frameDuration);
@@ -394,7 +396,12 @@ export const App: React.FC = () => {
           setCurrentFrame((prev) => {
             let next = prev + advance;
             if (next > cropEnd) {
-              next = cropStart;
+              if (isLooping) {
+                next = cropStart;
+              } else {
+                setIsPlaying(false);
+                return cropEnd;
+              }
             }
             return next;
           });
@@ -403,21 +410,38 @@ export const App: React.FC = () => {
       };
 
       animId = requestAnimationFrame(tickSequence);
-      return () => cancelAnimationFrame(animId);
+      return () => {
+        isCancelled = true;
+        cancelAnimationFrame(animId);
+      };
     }
 
     // CASE B: Video File Mode (Hardware Accelerated Video Playback)
     const video = loader.videoElement;
     const fps = loader.metadata.fps || 30;
 
+    const startSec = Math.max(0.001, cropStart / fps);
+    const endSec = Math.min(video.duration || Infinity, (cropEnd + 0.4) / fps);
+
     // Start video playback from current playhead position
-    const startSec = Math.max(0, currentFrameRef.current / fps);
-    if (Math.abs(video.currentTime - startSec) > 0.08) {
+    const currentSec = Math.max(0, currentFrameRef.current / fps);
+    if (currentSec >= endSec || currentSec < startSec - 0.05) {
       video.currentTime = startSec;
+    } else if (Math.abs(video.currentTime - currentSec) > 0.08) {
+      video.currentTime = currentSec;
     }
 
     let isCancelled = false;
     let animId: number;
+    let isRewinding = false;
+
+    const onSeeked = () => {
+      isRewinding = false;
+      if (!isCancelled && video.paused) {
+        video.play().catch(() => {});
+      }
+    };
+    video.addEventListener('seeked', onSeeked);
 
     const playPromise = video.play();
     if (playPromise) {
@@ -429,59 +453,65 @@ export const App: React.FC = () => {
     const onVideoFrame = () => {
       if (isCancelled) return;
 
-      // If video is still starting or seeking, keep polling next animation frame
-      if (video.paused) {
-        animId = requestAnimationFrame(onVideoFrame);
-        return;
-      }
-
-      if (video.ended) {
-        video.currentTime = cropStart / fps;
-        video.play().catch(() => {});
-        animId = requestAnimationFrame(onVideoFrame);
-        return;
-      }
-
       const time = video.currentTime;
-      let frame = Math.round(time * fps);
 
-      if (frame > cropEnd) {
-        video.currentTime = cropStart / fps;
-        frame = cropStart;
-      }
-
-      setCurrentFrame(frame);
-
-      // Render playing frame immediately to viewport
-      if (
-        !viewportCanvasRef.current ||
-        viewportCanvasRef.current.width !== video.videoWidth ||
-        viewportCanvasRef.current.height !== video.videoHeight
-      ) {
-        viewportCanvasRef.current = document.createElement('canvas');
-        viewportCanvasRef.current.width = video.videoWidth;
-        viewportCanvasRef.current.height = video.videoHeight;
-      }
-
-      const canvas = viewportCanvasRef.current;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        if (!keyingSettings.enabled && !showMask && !keyingSettings.garbageMatte?.enabled) {
-          ctx.drawImage(video, 0, 0);
-          setViewportCanvas(canvas);
-          setRenderTrigger((v) => (v + 1) % 1000000);
-        } else {
-          const raw = loader.captureCurrentPlayingFrame();
-          if (raw) {
-            ImageProcessor.applyChromaKey(raw, keyingSettings, true);
-            if (showMask) {
-              ImageProcessor.convertToAlphaMask(raw);
+      // Check if we hit the loop boundary or end of video
+      if (time >= endSec - 0.02 || video.ended) {
+        if (isLooping) {
+          if (!isRewinding) {
+            isRewinding = true;
+            video.currentTime = startSec;
+            setCurrentFrame(cropStart);
+            if (video.paused || video.ended) {
+              video.play().catch(() => {});
             }
-            ctx.putImageData(raw, 0, 0);
+          }
+        } else {
+          // Loop is disabled: stop cleanly at cropEnd
+          setIsPlaying(false);
+          setCurrentFrame(cropEnd);
+          return;
+        }
+      } else if (!isRewinding) {
+        const frame = Math.max(cropStart, Math.min(cropEnd, Math.round(time * fps)));
+        setCurrentFrame(frame);
+
+        // Render playing frame immediately to viewport
+        if (
+          !viewportCanvasRef.current ||
+          viewportCanvasRef.current.width !== video.videoWidth ||
+          viewportCanvasRef.current.height !== video.videoHeight
+        ) {
+          viewportCanvasRef.current = document.createElement('canvas');
+          viewportCanvasRef.current.width = video.videoWidth;
+          viewportCanvasRef.current.height = video.videoHeight;
+        }
+
+        const canvas = viewportCanvasRef.current;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          if (!keyingSettings.enabled && !showMask && !keyingSettings.garbageMatte?.enabled) {
+            ctx.drawImage(video, 0, 0);
             setViewportCanvas(canvas);
             setRenderTrigger((v) => (v + 1) % 1000000);
+          } else {
+            const raw = loader.captureCurrentPlayingFrame();
+            if (raw) {
+              ImageProcessor.applyChromaKey(raw, keyingSettings, true);
+              if (showMask) {
+                ImageProcessor.convertToAlphaMask(raw);
+              }
+              ctx.putImageData(raw, 0, 0);
+              setViewportCanvas(canvas);
+              setRenderTrigger((v) => (v + 1) % 1000000);
+            }
           }
         }
+      }
+
+      // If video got paused unexpectedly (e.g. from seek or EOF), resume play
+      if (video.paused && !video.ended && !isRewinding) {
+        video.play().catch(() => {});
       }
 
       animId = requestAnimationFrame(onVideoFrame);
@@ -491,10 +521,11 @@ export const App: React.FC = () => {
 
     return () => {
       isCancelled = true;
+      video.removeEventListener('seeked', onSeeked);
       if (animId) cancelAnimationFrame(animId);
       video.pause();
     };
-  }, [isPlaying, mode, cropStart, cropEnd, keyingSettings, showMask]);
+  }, [isPlaying, isLooping, mode, cropStart, cropEnd, keyingSettings, showMask]);
 
   // Render Sprite in Viewport (Sprites Mode)
   const renderSpriteFrame = useCallback(async () => {
@@ -1516,6 +1547,8 @@ export const App: React.FC = () => {
               isPlaying={isPlaying}
               setIsPlaying={setIsPlaying}
               isSequence={currentLoader.isSequence}
+              isLooping={isLooping}
+              setIsLooping={setIsLooping}
               onDistributeMarkers={distributeMarkers}
               onDetectLoop={handleDetectLoop}
             />
