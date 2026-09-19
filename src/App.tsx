@@ -547,12 +547,12 @@ export const App: React.FC = () => {
       const cols = atlasSettings.columns;
       const rows = atlasSettings.rows;
 
-      // Downsample cell size for the sidebar thumbnail (e.g. max 128px)
-      // This reduces pixel count by 100x and makes preview instantaneous!
-      const previewCellSize = 128;
-      const pScale = Math.min(1.0, previewCellSize / Math.max(fw, fh));
-      const pfw = Math.max(16, Math.round(fw * pScale));
-      const pfh = Math.max(16, Math.round(fh * pScale));
+      // High-resolution preview matching configured frame dimensions
+      const maxDim = Math.max(fw, fh);
+      const previewCellSize = Math.min(maxDim, 1024);
+      const pScale = Math.min(1.0, previewCellSize / maxDim);
+      const pfw = Math.max(32, Math.round(fw * pScale));
+      const pfh = Math.max(32, Math.round(fh * pScale));
 
       const frameCanvases: HTMLCanvasElement[] = [];
 

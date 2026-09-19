@@ -61,7 +61,8 @@ export const AtlasPreview: React.FC<AtlasPreviewProps> = ({
         style={{
           position: 'relative',
           width: '100%',
-          height: 160,
+          height: 200,
+          minHeight: 180,
           borderRadius: 8,
           border: '1px solid var(--border-subtle)',
           overflow: 'hidden',

@@ -19,26 +19,26 @@ interface TimelineProps {
   onDetectLoop?: () => Promise<string | null>;
 }
 
-// Exact Palette from classic AtlasConverter Qt painter
-const TL_BG = '#333333';
-const TL_RULER_BG = '#2c2c2c';
-const TL_TRACK = '#242424';
-const TL_RANGE_TOP = '#4a5460';
-const TL_RANGE_BOTTOM = '#3a424c';
-const TL_OUT = '#1c1c1c';
-const TL_KEYLANE = '#2a2a2a';
-const TL_GRID = '#3f3f3f';
-const TL_TICK = '#606060';
-const TL_TEXT = '#a8a8a8';
-const TL_HANDLE = '#8fb8de';
-const TL_HANDLE_HOVER = '#cbe2f7';
-const TL_HANDLE_GRIP = '#1d2a36';
-const TL_KEY = '#c9d2da';
+// SpriteForge Studio Unified Cyber-Emerald Brand Palette
+const TL_BG = '#0c1210';
+const TL_RULER_BG = '#0e1714';
+const TL_TRACK = '#0a100e';
+const TL_RANGE_TOP = '#184231';
+const TL_RANGE_BOTTOM = '#102e22';
+const TL_OUT = '#060908';
+const TL_KEYLANE = '#0b1310';
+const TL_GRID = '#193025';
+const TL_TICK = '#2b4739';
+const TL_TEXT = '#758580';
+const TL_HANDLE = '#00f084';
+const TL_HANDLE_HOVER = '#38bdf8';
+const TL_HANDLE_GRIP = '#062618';
+const TL_KEY = '#79b39a';
 const TL_KEY_HOVER = '#ffffff';
-const TL_KEY_SELECTED = '#f2b134';
-const TL_KEY_EDGE = '#161616';
-const TL_PLAYHEAD = '#e2574c';
-const TL_PLAYHEAD_TEXT = '#ffffff';
+const TL_KEY_SELECTED = '#f59e0b';
+const TL_KEY_EDGE = '#05140d';
+const TL_PLAYHEAD = '#00f084';
+const TL_PLAYHEAD_TEXT = '#05140d';
 
 // Exact Geometry Constants
 const PAD = 16;
@@ -384,12 +384,15 @@ export const Timeline: React.FC<TimelineProps> = ({
 
       if (xe - xs >= textW * 2 + 10) {
         const chipX = isStart ? x + HANDLE_W + 3 : x - HANDLE_W - 3 - textW;
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+        ctx.fillStyle = '#081c14';
+        ctx.strokeStyle = '#16402d';
+        ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.roundRect(chipX, labelY - 8, textW, 16, 3);
         ctx.fill();
+        ctx.stroke();
 
-        ctx.fillStyle = TL_HANDLE_HOVER;
+        ctx.fillStyle = '#00f084';
         ctx.fillText(text, chipX + textW / 2, labelY);
       }
     }

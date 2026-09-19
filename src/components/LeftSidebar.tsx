@@ -7,9 +7,6 @@ import {
   Sparkles,
   Plus,
   Wand2,
-  SlidersHorizontal,
-  ChevronDown,
-  ChevronRight,
   Repeat,
   ArrowUp,
   ArrowDown,
@@ -27,7 +24,7 @@ export interface LoadedFileItem {
   fileRef?: File;
 }
 
-type LeftSidebarTab = 'media' | 'keylight' | 'cleanup' | 'all';
+type LeftSidebarTab = 'media' | 'keylight' | 'cleanup';
 
 interface LeftSidebarProps {
   mode: AppMode;
@@ -79,11 +76,6 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<LeftSidebarTab>('media');
-
-  // Accordion state for 'all' tab
-  const [openMedia, setOpenMedia] = useState(true);
-  const [openKeylight, setOpenKeylight] = useState(true);
-  const [openCleanup, setOpenCleanup] = useState(true);
 
   const enabledCount = tracks.filter((t) => t.enabled).length;
 
@@ -199,33 +191,12 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
           <Sparkles size={12} style={{ color: activeTab === 'cleanup' ? 'var(--accent-cyan)' : 'inherit' }} />
           <span>AI Clean</span>
         </button>
-
-        <button
-          onClick={() => setActiveTab('all')}
-          style={{
-            flex: 1,
-            padding: '5px 4px',
-            fontSize: 10,
-            borderRadius: 5,
-            background: activeTab === 'all' ? 'var(--bg-card-active)' : 'transparent',
-            border: activeTab === 'all' ? '1px solid var(--border-medium)' : '1px solid transparent',
-            color: activeTab === 'all' ? 'var(--text-bright)' : 'var(--text-muted)',
-            fontWeight: activeTab === 'all' ? 600 : 400,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 2,
-          }}
-          title="Show All Tools"
-        >
-          <SlidersHorizontal size={12} style={{ color: activeTab === 'all' ? 'var(--accent-orange)' : 'inherit' }} />
-          <span>All</span>
-        </button>
       </div>
 
       {/* 3. Tab Content */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', gap: 12 }}>
         {/* TAB: MEDIA & MULTI-TRACKS */}
-        {(activeTab === 'media' || activeTab === 'all') && (
+        {activeTab === 'media' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {/* Scope Switcher: Single vs Master Set */}
             <div
@@ -270,51 +241,27 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
               </button>
             </div>
 
-            {activeTab === 'all' && (
-              <div
-                onClick={() => setOpenMedia(!openMedia)}
-                className="sidebar-section-title"
-                style={{ cursor: 'pointer', margin: 0 }}
+            <div className="sidebar-section-title" style={{ margin: 0 }}>
+              <span>Animation Tracks</span>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 4,
+                  color: 'var(--accent-green)',
+                  padding: '2px 6px',
+                  fontSize: 10,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  cursor: 'pointer',
+                }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  {openMedia ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                  <span>Animation Tracks ({tracks.length})</span>
-                </div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    fileInputRef.current?.click();
-                  }}
-                  style={{ background: 'transparent', border: 'none', color: 'var(--accent-green)', padding: '2px 4px' }}
-                  title="Add files"
-                >
-                  <Plus size={13} />
-                </button>
-              </div>
-            )}
-
-            {activeTab === 'media' && (
-              <div className="sidebar-section-title" style={{ margin: 0 }}>
-                <span>Animation Tracks</span>
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  style={{
-                    background: 'transparent',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: 4,
-                    color: 'var(--accent-green)',
-                    padding: '2px 6px',
-                    fontSize: 10,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 4,
-                  }}
-                >
-                  <Plus size={12} />
-                  <span>Add Clip</span>
-                </button>
-              </div>
-            )}
+                <Plus size={12} />
+                <span>Add Clip</span>
+              </button>
+            </div>
 
             <input
               type="file"
@@ -325,8 +272,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
               style={{ display: 'none' }}
             />
 
-            {(activeTab === 'media' || openMedia) && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {tracks.length === 0 ? (
                   <div
                     onClick={() => fileInputRef.current?.click()}
@@ -510,63 +456,29 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                   })
                 )}
               </div>
-            )}
           </div>
         )}
 
         {/* TAB: KEYLIGHT */}
-        {(activeTab === 'keylight' || activeTab === 'all') && (
+        {activeTab === 'keylight' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {activeTab === 'all' && (
-              <div
-                onClick={() => setOpenKeylight(!openKeylight)}
-                className="sidebar-section-title"
-                style={{ cursor: 'pointer', margin: 0, marginTop: 6 }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  {openKeylight ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                  <span>Keylight Chroma Key</span>
-                </div>
-              </div>
-            )}
-
-            {(activeTab === 'keylight' || openKeylight) && (
-              <ChromaKeyPanel
-                settings={keyingSettings}
-                onChange={onChangeKeying}
-                isEyedropperActive={isEyedropperActive}
-                setIsEyedropperActive={setIsEyedropperActive}
-                onAutoDetectKey={onAutoDetectKey}
-              />
-            )}
+            <ChromaKeyPanel
+              settings={keyingSettings}
+              onChange={onChangeKeying}
+              isEyedropperActive={isEyedropperActive}
+              setIsEyedropperActive={setIsEyedropperActive}
+              onAutoDetectKey={onAutoDetectKey}
+            />
           </div>
         )}
 
         {/* TAB: AI CLEANUP & FX */}
-        {(activeTab === 'cleanup' || activeTab === 'all') && (
+        {activeTab === 'cleanup' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {activeTab === 'all' && (
-              <div
-                onClick={() => setOpenCleanup(!openCleanup)}
-                className="sidebar-section-title"
-                style={{ cursor: 'pointer', margin: 0, marginTop: 6 }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  {openCleanup ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                  <span>AI Cleanup & Stabilization</span>
-                </div>
-              </div>
-            )}
-
-            {activeTab === 'cleanup' && (
-              <div className="sidebar-section-title" style={{ margin: 0 }}>
-                <span>AI Cleanup & Stabilization</span>
-              </div>
-            )}
-
-            {(activeTab === 'cleanup' || openCleanup) && (
-              <AiCleanupPanel settings={atlasSettings} onChange={onChangeAtlasSettings} />
-            )}
+            <div className="sidebar-section-title" style={{ margin: 0 }}>
+              <span>AI Cleanup & Stabilization</span>
+            </div>
+            <AiCleanupPanel settings={atlasSettings} onChange={onChangeAtlasSettings} />
           </div>
         )}
       </div>
