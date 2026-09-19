@@ -1,0 +1,24 @@
+# Python & PyInstaller
+__pycache__/
+*.py[cod]
+*.class
+*.spec.bak
+build/
+dist/
+*.exe
+
+# Large Binaries (>100MB blocked by GitHub)
+ffmpeg.exe
+ffprobe.exe
+
+# Node / Web Build
+node_modules/
+web/node_modules/
+web/dist/
+.vite/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+*.tmp
+.vscode/

@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"from gui import MainWindow; print\\('OK'\\)\")",
+      "Bash(python build.py)",
+      "Bash(./dist/AtlasConverter.exe)",
+      "Bash(echo \"EXIT CODE: $?\")",
+      "Bash(python -c ':*)",
+      "Bash(ie4uinit.exe -show)"
+    ]
+  }
+}

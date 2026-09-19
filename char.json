@@ -1,0 +1,28 @@
+{
+    "keying": {
+        "gain": 22,
+        "soften": 19,
+        "clip": 9,
+        "sat": 10,
+        "val": 10
+    },
+    "colors": {
+        "bg": [
+            156,
+            142,
+            117
+        ],
+        "key": [
+            138,
+            162,
+            120
+        ]
+    },
+    "atlas": {
+        "width": 512,
+        "height": 512,
+        "cols": 3,
+        "rows": 3,
+        "frames": 9
+    }
+}

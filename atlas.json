@@ -1,0 +1,29 @@
+{
+    "videoFile": "D:/Games/HoralKey/freepik__muscular-cartoon-rat-character-attacks-with-a-knif__48323.mp4",
+    "frameWidth": 512,
+    "frameHeight": 512,
+    "columns": 4,
+    "rows": 4,
+    "framesCount": 16,
+    "fps": 24.0,
+    "cropStart": 44,
+    "cropEnd": 78,
+    "frameIndices": [
+        44,
+        46,
+        48,
+        50,
+        53,
+        55,
+        57,
+        59,
+        62,
+        64,
+        66,
+        68,
+        71,
+        73,
+        75,
+        78
+    ]
+}
