@@ -36,6 +36,7 @@ interface ViewportProps {
   onUpdateCollisionSettings?: (settings: CollisionSettings) => void;
   showColliders?: boolean;
   setShowColliders?: (show: boolean) => void;
+  renderTrigger?: number;
 }
 
 export const Viewport: React.FC<ViewportProps> = ({
@@ -68,6 +69,7 @@ export const Viewport: React.FC<ViewportProps> = ({
   onUpdateCollisionSettings,
   showColliders = false,
   setShowColliders,
+  renderTrigger,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const displayCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -319,7 +321,7 @@ export const Viewport: React.FC<ViewportProps> = ({
 
   useEffect(() => {
     render();
-  }, [render]);
+  }, [render, renderTrigger]);
 
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();

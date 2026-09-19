@@ -50,6 +50,17 @@ export class VideoLoader {
       video.preload = 'auto';
       video.muted = true;
       video.playsInline = true;
+      video.setAttribute('playsinline', '');
+      video.setAttribute('webkit-playsinline', '');
+      video.style.position = 'fixed';
+      video.style.bottom = '0';
+      video.style.right = '0';
+      video.style.width = '1px';
+      video.style.height = '1px';
+      video.style.opacity = '0.01';
+      video.style.pointerEvents = 'none';
+      video.style.zIndex = '-9999';
+      document.body.appendChild(video);
 
       const url = URL.createObjectURL(file);
       video.src = url;
@@ -351,8 +362,12 @@ export class VideoLoader {
 
   public close() {
     if (this.videoElement) {
+      this.videoElement.pause();
       this.videoElement.src = '';
       this.videoElement.load();
+      if (this.videoElement.parentNode) {
+        this.videoElement.parentNode.removeChild(this.videoElement);
+      }
       this.videoElement = null;
     }
     this.imageFiles = [];

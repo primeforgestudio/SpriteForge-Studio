@@ -59,6 +59,7 @@ export const App: React.FC = () => {
   const [isEyedropperActive, setIsEyedropperActive] = useState(false);
   const [viewportCanvas, setViewportCanvas] = useState<HTMLCanvasElement | null>(null);
   const viewportCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [renderTrigger, setRenderTrigger] = useState(0);
 
   // Timeline
   const [currentFrame, setCurrentFrame] = useState(0);
@@ -340,6 +341,7 @@ export const App: React.FC = () => {
     if (!keyingSettings.enabled && !showMask && !keyingSettings.garbageMatte?.enabled) {
       ctx.putImageData(rawData, 0, 0);
       setViewportCanvas(canvas);
+      setRenderTrigger((v) => (v + 1) % 1000000);
       return;
     }
 
@@ -356,6 +358,7 @@ export const App: React.FC = () => {
     ctx.putImageData(processedData, 0, 0);
 
     setViewportCanvas(canvas);
+    setRenderTrigger((v) => (v + 1) % 1000000);
   }, [mode, keyingSettings, showMask]);
 
   // When paused or scrubbing, update viewport frame
@@ -424,7 +427,20 @@ export const App: React.FC = () => {
     }
 
     const onVideoFrame = () => {
-      if (isCancelled || video.paused || video.ended) return;
+      if (isCancelled) return;
+
+      // If video is still starting or seeking, keep polling next animation frame
+      if (video.paused) {
+        animId = requestAnimationFrame(onVideoFrame);
+        return;
+      }
+
+      if (video.ended) {
+        video.currentTime = cropStart / fps;
+        video.play().catch(() => {});
+        animId = requestAnimationFrame(onVideoFrame);
+        return;
+      }
 
       const time = video.currentTime;
       let frame = Math.round(time * fps);
@@ -453,6 +469,7 @@ export const App: React.FC = () => {
         if (!keyingSettings.enabled && !showMask && !keyingSettings.garbageMatte?.enabled) {
           ctx.drawImage(video, 0, 0);
           setViewportCanvas(canvas);
+          setRenderTrigger((v) => (v + 1) % 1000000);
         } else {
           const raw = loader.captureCurrentPlayingFrame();
           if (raw) {
@@ -462,22 +479,15 @@ export const App: React.FC = () => {
             }
             ctx.putImageData(raw, 0, 0);
             setViewportCanvas(canvas);
+            setRenderTrigger((v) => (v + 1) % 1000000);
           }
         }
       }
 
-      if ('requestVideoFrameCallback' in video) {
-        (video as any).requestVideoFrameCallback(onVideoFrame);
-      } else {
-        animId = requestAnimationFrame(onVideoFrame);
-      }
+      animId = requestAnimationFrame(onVideoFrame);
     };
 
-    if ('requestVideoFrameCallback' in video) {
-      (video as any).requestVideoFrameCallback(onVideoFrame);
-    } else {
-      animId = requestAnimationFrame(onVideoFrame);
-    }
+    animId = requestAnimationFrame(onVideoFrame);
 
     return () => {
       isCancelled = true;
@@ -1483,6 +1493,7 @@ export const App: React.FC = () => {
             }
             showColliders={showColliders}
             setShowColliders={setShowColliders}
+            renderTrigger={renderTrigger}
           />
 
           {/* Timeline */}
