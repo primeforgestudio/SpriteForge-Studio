@@ -20,6 +20,10 @@ export const AtlasModal: React.FC<AtlasModalProps> = ({
   const dragStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
 
+  const dataUrl = React.useMemo(() => {
+    return canvas ? canvas.toDataURL() : '';
+  }, [canvas]);
+
   // Reset view when modal opens or canvas changes
   useEffect(() => {
     if (isOpen && canvas && containerRef.current) {
@@ -357,7 +361,7 @@ export const AtlasModal: React.FC<AtlasModalProps> = ({
           }}
         >
           <img
-            src={canvas.toDataURL()}
+            src={dataUrl}
             alt="Enlarged Atlas"
             style={{
               width: canvas.width,

@@ -58,6 +58,7 @@ export const App: React.FC = () => {
   // Viewport & Eyedropper
   const [isEyedropperActive, setIsEyedropperActive] = useState(false);
   const [viewportCanvas, setViewportCanvas] = useState<HTMLCanvasElement | null>(null);
+  const viewportCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // Timeline
   const [currentFrame, setCurrentFrame] = useState(0);
@@ -310,7 +311,7 @@ export const App: React.FC = () => {
   };
 
   // Render Atlas Frame in Viewport
-  const renderAtlasFrame = useCallback(async (forcedFrame?: number) => {
+  const renderAtlasFrame = useCallback(async (forcedFrame?: number, fastPreview: boolean = false) => {
     if (mode !== 'atlas') return;
     const loader = atlasLoaderRef.current;
     if (loader.metadata.totalFrames <= 0) return;
@@ -319,9 +320,16 @@ export const App: React.FC = () => {
     const rawData = loader.getCachedFrame(targetFrame) || (await loader.getFrame(targetFrame));
     if (!rawData) return;
 
-    const canvas = document.createElement('canvas');
-    canvas.width = rawData.width;
-    canvas.height = rawData.height;
+    if (
+      !viewportCanvasRef.current ||
+      viewportCanvasRef.current.width !== rawData.width ||
+      viewportCanvasRef.current.height !== rawData.height
+    ) {
+      viewportCanvasRef.current = document.createElement('canvas');
+      viewportCanvasRef.current.width = rawData.width;
+      viewportCanvasRef.current.height = rawData.height;
+    }
+    const canvas = viewportCanvasRef.current;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
@@ -338,7 +346,7 @@ export const App: React.FC = () => {
       rawData.height
     );
 
-    ImageProcessor.applyChromaKey(processedData, keyingSettings);
+    ImageProcessor.applyChromaKey(processedData, keyingSettings, fastPreview);
     if (showMask) {
       ImageProcessor.convertToAlphaMask(processedData);
     }
@@ -347,9 +355,70 @@ export const App: React.FC = () => {
     setViewportCanvas(canvas);
   }, [mode, currentFrame, keyingSettings, showMask]);
 
+  // When paused or scrubbing, update viewport frame
   useEffect(() => {
-    renderAtlasFrame();
-  }, [renderAtlasFrame]);
+    if (isPlaying) return;
+    renderAtlasFrame(currentFrame, false);
+  }, [renderAtlasFrame, currentFrame, isPlaying]);
+
+  // Hardware Video Playback Loop (Silky Smooth 60 FPS GPU Playback)
+  useEffect(() => {
+    const loader = atlasLoaderRef.current;
+    if (mode !== 'atlas' || !loader.videoElement || loader.isSequence || loader.metadata.totalFrames <= 1) {
+      return;
+    }
+
+    const video = loader.videoElement;
+
+    if (isPlaying) {
+      const startTime = currentFrame / loader.metadata.fps;
+      if (Math.abs(video.currentTime - startTime) > 0.05) {
+        video.currentTime = startTime;
+      }
+      video.play().catch((err) => console.warn('Video play error:', err));
+
+      let handle: any;
+      let isSubscribed = true;
+
+      const onVideoFrame = () => {
+        if (!isSubscribed || video.paused || video.ended) return;
+
+        const time = video.currentTime;
+        const frame = Math.round(time * loader.metadata.fps);
+
+        if (frame > cropEnd) {
+          video.currentTime = cropStart / loader.metadata.fps;
+        } else {
+          setCurrentFrame(frame);
+          renderAtlasFrame(frame, true);
+        }
+
+        if ('requestVideoFrameCallback' in video) {
+          handle = (video as any).requestVideoFrameCallback(onVideoFrame);
+        } else {
+          handle = requestAnimationFrame(onVideoFrame);
+        }
+      };
+
+      if ('requestVideoFrameCallback' in video) {
+        handle = (video as any).requestVideoFrameCallback(onVideoFrame);
+      } else {
+        handle = requestAnimationFrame(onVideoFrame);
+      }
+
+      return () => {
+        isSubscribed = false;
+        if ('cancelVideoFrameCallback' in video && handle) {
+          (video as any).cancelVideoFrameCallback(handle);
+        } else if (handle) {
+          cancelAnimationFrame(handle);
+        }
+        video.pause();
+      };
+    } else {
+      video.pause();
+    }
+  }, [isPlaying, mode, cropStart, cropEnd, renderAtlasFrame]);
 
   // Render Sprite in Viewport (Sprites Mode)
   const renderSpriteFrame = useCallback(async () => {
@@ -600,6 +669,11 @@ export const App: React.FC = () => {
         setCurrentFrame(0);
         setMarkers(initialMarkers);
         renderAtlasFrame(0);
+
+        // Preload keyframe markers in background so atlas generation is instant
+        loader.preloadMarkers(initialMarkers).then(() => {
+          updateAtlasPreview();
+        });
 
         // Generate thumbnail for file card in left sidebar
         const firstFrame = await loader.getFrame(0);
@@ -1364,6 +1438,7 @@ export const App: React.FC = () => {
               }}
               isPlaying={isPlaying}
               setIsPlaying={setIsPlaying}
+              isSequence={currentLoader.isSequence}
               onDistributeMarkers={distributeMarkers}
               onDetectLoop={handleDetectLoop}
             />

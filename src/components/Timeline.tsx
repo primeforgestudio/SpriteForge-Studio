@@ -15,6 +15,7 @@ interface TimelineProps {
   setFps: (fps: number) => void;
   isPlaying: boolean;
   setIsPlaying: (playing: boolean) => void;
+  isSequence?: boolean;
   onDistributeMarkers: () => void;
   onDetectLoop?: () => Promise<string | null>;
 }
@@ -49,7 +50,7 @@ const HIT = 9;
 const KEY_R = 7;
 const TOTAL_CANVAS_H = 96;
 
-export const Timeline: React.FC<TimelineProps> = ({
+const TimelineComponent: React.FC<TimelineProps> = ({
   totalFrames,
   currentFrame,
   setCurrentFrame,
@@ -62,6 +63,7 @@ export const Timeline: React.FC<TimelineProps> = ({
   fps,
   isPlaying,
   setIsPlaying,
+  isSequence = false,
   onDistributeMarkers,
   onDetectLoop,
 }) => {
@@ -95,9 +97,9 @@ export const Timeline: React.FC<TimelineProps> = ({
 
   const lastFrame = Math.max(0, totalFrames - 1);
 
-  // Smooth Playback Loop
+  // Smooth Playback Loop (Only runs for PNG image sequences; video files use hardware GPU play in App)
   useEffect(() => {
-    if (!isPlaying || totalFrames <= 1) return;
+    if (!isPlaying || totalFrames <= 1 || !isSequence) return;
 
     let animId: number;
     let lastTime = performance.now();
@@ -127,7 +129,7 @@ export const Timeline: React.FC<TimelineProps> = ({
 
     animId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(animId);
-  }, [isPlaying, fps, totalFrames, cropStart, cropEnd, isLooping, setCurrentFrame, setIsPlaying]);
+  }, [isPlaying, fps, totalFrames, cropStart, cropEnd, isLooping, isSequence, setCurrentFrame, setIsPlaying]);
 
   // Coordinate conversion helpers
   const getTrackBounds = useCallback((width: number) => {
@@ -581,6 +583,61 @@ export const Timeline: React.FC<TimelineProps> = ({
     setDragging(null);
   };
 
+  // Global drag listener so fast mouse scrubbing doesn't stutter or break when cursor leaves canvas
+  useEffect(() => {
+    if (!dragging) return;
+
+    const onWindowMove = (e: MouseEvent) => {
+      if (totalFrames <= 0 || !canvasRef.current) return;
+      const rect = canvasRef.current.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const width = canvasRef.current.clientWidth;
+      const frame = getFrameAtX(x, width);
+
+      if (dragging === 'key') {
+        const curIdx = dragKeyIndexRef.current;
+        if (curIdx >= 0 && curIdx < markers.length) {
+          const clampedFrame = Math.max(cropStart, Math.min(frame, cropEnd));
+          if (clampedFrame !== markers[curIdx]) {
+            const updated = [...markers];
+            updated[curIdx] = clampedFrame;
+            updated.sort((a, b) => a - b);
+            setMarkers(updated);
+            const newIdx = updated.indexOf(clampedFrame);
+            dragKeyIndexRef.current = newIdx;
+            setSelectedKey(newIdx);
+            setCurrentFrame(clampedFrame);
+          }
+        }
+      } else if (dragging === 'start') {
+        setCropStart(Math.max(0, Math.min(frame, cropEnd - 1)));
+      } else if (dragging === 'end') {
+        setCropEnd(Math.min(lastFrame, Math.max(frame, cropStart + 1)));
+      } else {
+        requestPlayheadScrub(frame);
+      }
+    };
+
+    const onWindowUp = () => {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      if (pendingFrameRef.current !== null) {
+        setCurrentFrame(pendingFrameRef.current);
+        pendingFrameRef.current = null;
+      }
+      setDragging(null);
+    };
+
+    window.addEventListener('mousemove', onWindowMove);
+    window.addEventListener('mouseup', onWindowUp);
+    return () => {
+      window.removeEventListener('mousemove', onWindowMove);
+      window.removeEventListener('mouseup', onWindowUp);
+    };
+  }, [dragging, totalFrames, cropStart, cropEnd, lastFrame, markers, getFrameAtX, requestPlayheadScrub, setCurrentFrame, setMarkers, setCropStart, setCropEnd]);
+
   // Keyboard navigation & keyframe nudging
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (totalFrames <= 0) return;
@@ -926,9 +983,10 @@ export const Timeline: React.FC<TimelineProps> = ({
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={() => {
-            handleMouseUp();
-            setHoverKey(-1);
-            setHoverHandle(null);
+            if (!dragging) {
+              setHoverKey(-1);
+              setHoverHandle(null);
+            }
           }}
           style={{
             width: '100%',
@@ -942,3 +1000,5 @@ export const Timeline: React.FC<TimelineProps> = ({
     </div>
   );
 };
+
+export const Timeline = React.memo(TimelineComponent);

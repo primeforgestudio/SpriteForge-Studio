@@ -106,7 +106,6 @@ export class VideoLoader {
         }
 
         resolved = true;
-        this.startBackgroundPreload();
         resolve(this.metadata);
       };
 
@@ -285,19 +284,9 @@ export class VideoLoader {
         this.finishSeek(data, resolve);
       };
 
-      timeoutId = setTimeout(onSeekComplete, 50);
+      timeoutId = setTimeout(onSeekComplete, 180);
       video.addEventListener('seeked', onSeekComplete, { once: true });
-
-      const v = video as HTMLVideoElement;
-      if (typeof (v as any).fastSeek === 'function') {
-        try {
-          (v as any).fastSeek(seekTime);
-        } catch {
-          v.currentTime = seekTime;
-        }
-      } else {
-        v.currentTime = seekTime;
-      }
+      video.currentTime = seekTime;
     });
   }
 
@@ -318,28 +307,26 @@ export class VideoLoader {
     }
   }
 
-  public startBackgroundPreload(): void {
-    if (!this.videoElement || this.isSequence || this.metadata.totalFrames <= 0) return;
-    const total = this.metadata.totalFrames;
-    let i = 0;
-    const step = () => {
-      if (!this.videoElement || this.isSequence) return;
-      if (i >= total) return;
-      if (this.isSeeking || this.pendingSeekFrame !== null || this.isVideoPlaying()) {
-        setTimeout(step, 120);
-        return;
+  public async preloadMarkers(markers: number[]): Promise<void> {
+    if (!this.videoElement || this.isSequence) return;
+    for (const f of markers) {
+      if (!this.frameCache.has(f)) {
+        await this.getFrame(f);
       }
-      if (!this.frameCache.has(i)) {
-        this.getFrame(i).then(() => {
-          i++;
-          setTimeout(step, 10);
-        });
-      } else {
-        i++;
-        setTimeout(step, 2);
-      }
-    };
-    setTimeout(step, 250);
+    }
+  }
+
+  public play(): Promise<void> {
+    if (this.videoElement) {
+      return this.videoElement.play();
+    }
+    return Promise.resolve();
+  }
+
+  public pause(): void {
+    if (this.videoElement) {
+      this.videoElement.pause();
+    }
   }
 
   private loadImageElement(file: File): Promise<HTMLImageElement> {

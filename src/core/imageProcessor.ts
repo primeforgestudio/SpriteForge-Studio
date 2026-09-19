@@ -26,12 +26,21 @@ export class ImageProcessor {
     return [hCv, sCv, vCv];
   }
 
+  private static cachedAlphaBuffer: Float32Array | null = null;
+  private static getAlphaBuffer(size: number): Float32Array {
+    if (!this.cachedAlphaBuffer || this.cachedAlphaBuffer.length < size) {
+      this.cachedAlphaBuffer = new Float32Array(size);
+    }
+    return this.cachedAlphaBuffer;
+  }
+
   /**
    * Main Chroma Key entry point - Keylight Color Difference Keying
    */
   public static applyChromaKey(
     imageData: ImageData,
-    settings: ChromaKeySettings
+    settings: ChromaKeySettings,
+    skipDefringe = false
   ): ImageData {
     if (!settings.enabled && !settings.garbageMatte?.enabled) {
       return imageData;
@@ -39,7 +48,7 @@ export class ImageProcessor {
     let result = imageData;
     if (settings.enabled) {
       result = this.applyKeylight(imageData, settings);
-      if (settings.defringe) {
+      if (settings.defringe && !skipDefringe) {
         this.applySmartDefringe(
           result,
           settings.defringeRadius ?? 2,
@@ -296,7 +305,7 @@ export class ImageProcessor {
       sExcess = Math.max(0.001, sr - sComp);
     }
 
-    const alphaBuffer = new Float32Array(totalPixels);
+    const alphaBuffer = this.getAlphaBuffer(totalPixels);
 
     for (let i = 0; i < totalPixels; i++) {
       const idx = i * 4;

@@ -22,7 +22,7 @@ interface AtlasPreviewProps {
   masterTracksCount?: number;
 }
 
-export const AtlasPreview: React.FC<AtlasPreviewProps> = ({
+const AtlasPreviewComponent: React.FC<AtlasPreviewProps> = ({
   mode,
   atlasCanvas,
   spritesCanvases,
@@ -40,6 +40,10 @@ export const AtlasPreview: React.FC<AtlasPreviewProps> = ({
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+
+  const atlasDataUrl = React.useMemo(() => {
+    return atlasCanvas ? atlasCanvas.toDataURL() : '';
+  }, [atlasCanvas]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 4 }}>
@@ -80,7 +84,7 @@ export const AtlasPreview: React.FC<AtlasPreviewProps> = ({
           atlasCanvas ? (
             <>
               <img
-                src={atlasCanvas.toDataURL()}
+                src={atlasDataUrl}
                 alt="Atlas Preview"
                 style={{
                   maxWidth: '100%',
@@ -315,3 +319,5 @@ export const AtlasPreview: React.FC<AtlasPreviewProps> = ({
     </div>
   );
 };
+
+export const AtlasPreview = React.memo(AtlasPreviewComponent);

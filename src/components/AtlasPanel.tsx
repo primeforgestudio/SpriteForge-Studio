@@ -15,7 +15,7 @@ interface AtlasPanelProps {
   onAutoFitFeet?: () => void;
 }
 
-export const AtlasPanel: React.FC<AtlasPanelProps> = ({
+const AtlasPanelComponent: React.FC<AtlasPanelProps> = ({
   settings,
   onChange,
   onRefreshAtlas,
@@ -601,3 +601,5 @@ export const AtlasPanel: React.FC<AtlasPanelProps> = ({
     </div>
   );
 };
+
+export const AtlasPanel = React.memo(AtlasPanelComponent);

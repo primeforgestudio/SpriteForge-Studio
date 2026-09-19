@@ -52,7 +52,7 @@ interface LeftSidebarProps {
   width?: number;
 }
 
-export const LeftSidebar: React.FC<LeftSidebarProps> = ({
+const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
   mode,
   setMode,
   tracks,
@@ -485,3 +485,5 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
     </aside>
   );
 };
+
+export const LeftSidebar = React.memo(LeftSidebarComponent);
