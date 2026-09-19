@@ -38,8 +38,9 @@ export class VideoLoader {
     return false;
   }
 
-  private seekLock: Promise<any> = Promise.resolve();
-  private latestRequestedFrame: number = -1;
+  private isSeeking = false;
+  private pendingSeekFrame: number | null = null;
+  private pendingSeekResolvers: ((data: ImageData | null) => void)[] = [];
 
   public async loadVideoFile(file: File, customFps = 30): Promise<MediaMetadata> {
     this.close();
@@ -105,6 +106,7 @@ export class VideoLoader {
         }
 
         resolved = true;
+        this.startBackgroundPreload();
         resolve(this.metadata);
       };
 
@@ -202,7 +204,6 @@ export class VideoLoader {
 
   public async getFrame(frameIndex: number): Promise<ImageData | null> {
     const clampedIndex = Math.max(0, Math.min(this.metadata.totalFrames - 1, frameIndex));
-    this.latestRequestedFrame = clampedIndex;
 
     if (this.frameCache.has(clampedIndex)) {
       const cached = this.frameCache.get(clampedIndex)!;
@@ -227,77 +228,118 @@ export class VideoLoader {
 
     if (!this.videoElement) return null;
 
-    // Fast seek without chaining stalled backlog
-    return new Promise<ImageData | null>((resolve) => {
-      this.seekLock = this.seekLock.then(() => {
-        return new Promise<void>((nextSeek) => {
-          const video = this.videoElement;
-          if (!video) {
-            resolve(null);
-            nextSeek();
-            return;
-          }
-
-          // If another frame was requested while waiting in lock, jump immediately
-          const targetIndex = this.latestRequestedFrame >= 0 ? this.latestRequestedFrame : clampedIndex;
-          if (this.frameCache.has(targetIndex)) {
-            resolve(this.frameCache.get(targetIndex)!);
-            nextSeek();
-            return;
-          }
-
-          const targetTime = targetIndex === 0 ? 0.001 : targetIndex / this.metadata.fps;
-          const seekTime = Math.min(targetTime, Math.max(0, (video.duration || 0) - 0.001));
-
-          const capture = (): ImageData | null => {
-            this.offscreenCanvas.width = video.videoWidth;
-            this.offscreenCanvas.height = video.videoHeight;
-            this.offscreenCtx.clearRect(0, 0, video.videoWidth, video.videoHeight);
-            this.offscreenCtx.drawImage(video, 0, 0);
-            const data = this.offscreenCtx.getImageData(0, 0, video.videoWidth, video.videoHeight);
-            if (this.isFrameValid(data)) {
-              this.frameCache.set(targetIndex, data);
-              return data;
-            }
-            return null;
-          };
-
-          // If already at seek time and video is ready
-          if (Math.abs(video.currentTime - seekTime) < 0.003 && video.readyState >= 2) {
-            const data = capture();
-            if (data) {
-              resolve(data);
-              nextSeek();
-              return;
-            }
-          }
-
-          let timeoutId: any;
-          let settled = false;
-
-          const onSeekComplete = () => {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timeoutId);
-            video.removeEventListener('seeked', onSeekComplete);
-
-            const data = capture();
-            resolve(data);
-            nextSeek();
-          };
-
-          // If currentTime is already at seekTime, setting currentTime will not trigger 'seeked'
-          if (Math.abs(video.currentTime - seekTime) < 0.001) {
-            onSeekComplete();
-            return;
-          }
-
-          timeoutId = setTimeout(onSeekComplete, 120);
-          video.addEventListener('seeked', onSeekComplete, { once: true });
-          video.currentTime = seekTime;
-        });
+    // 2. If already seeking, record this target as the latest pending frame
+    // This drops all intermediate skipped frames and eliminates backlog!
+    if (this.isSeeking) {
+      this.pendingSeekFrame = clampedIndex;
+      return new Promise<ImageData | null>((resolve) => {
+        this.pendingSeekResolvers.push(resolve);
       });
+    }
+
+    // 3. Initiate single non-blocking seek
+    return this.executeSeek(clampedIndex);
+  }
+
+  private executeSeek(targetIndex: number): Promise<ImageData | null> {
+    const video = this.videoElement;
+    if (!video) return Promise.resolve(null);
+
+    this.isSeeking = true;
+
+    return new Promise<ImageData | null>((resolve) => {
+      const targetTime = targetIndex === 0 ? 0.001 : targetIndex / this.metadata.fps;
+      const seekTime = Math.min(targetTime, Math.max(0, (video.duration || 0) - 0.001));
+
+      const capture = (): ImageData | null => {
+        if (this.offscreenCanvas.width !== video.videoWidth || this.offscreenCanvas.height !== video.videoHeight) {
+          this.offscreenCanvas.width = video.videoWidth;
+          this.offscreenCanvas.height = video.videoHeight;
+        }
+        this.offscreenCtx.drawImage(video, 0, 0);
+        const data = this.offscreenCtx.getImageData(0, 0, video.videoWidth, video.videoHeight);
+        if (this.isFrameValid(data)) {
+          this.frameCache.set(targetIndex, data);
+          return data;
+        }
+        return null;
+      };
+
+      // If already at seek time and video is ready
+      if (Math.abs(video.currentTime - seekTime) < 0.003 && video.readyState >= 2) {
+        const data = capture();
+        this.finishSeek(data, resolve);
+        return;
+      }
+
+      let timeoutId: any;
+      let settled = false;
+
+      const onSeekComplete = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
+        video.removeEventListener('seeked', onSeekComplete);
+
+        const data = capture();
+        this.finishSeek(data, resolve);
+      };
+
+      timeoutId = setTimeout(onSeekComplete, 50);
+      video.addEventListener('seeked', onSeekComplete, { once: true });
+
+      const v = video as HTMLVideoElement;
+      if (typeof (v as any).fastSeek === 'function') {
+        try {
+          (v as any).fastSeek(seekTime);
+        } catch {
+          v.currentTime = seekTime;
+        }
+      } else {
+        v.currentTime = seekTime;
+      }
     });
+  }
+
+  private finishSeek(data: ImageData | null, currentResolve: (val: ImageData | null) => void) {
+    currentResolve(data);
+    this.isSeeking = false;
+
+    // If another frame was requested while seeking, jump directly to the latest target!
+    if (this.pendingSeekFrame !== null) {
+      const nextIndex = this.pendingSeekFrame;
+      const resolvers = [...this.pendingSeekResolvers];
+      this.pendingSeekFrame = null;
+      this.pendingSeekResolvers = [];
+
+      this.executeSeek(nextIndex).then((nextData) => {
+        resolvers.forEach((r) => r(nextData));
+      });
+    }
+  }
+
+  public startBackgroundPreload(): void {
+    if (!this.videoElement || this.isSequence || this.metadata.totalFrames <= 0) return;
+    const total = this.metadata.totalFrames;
+    let i = 0;
+    const step = () => {
+      if (!this.videoElement || this.isSequence) return;
+      if (i >= total) return;
+      if (this.isSeeking || this.pendingSeekFrame !== null || this.isVideoPlaying()) {
+        setTimeout(step, 120);
+        return;
+      }
+      if (!this.frameCache.has(i)) {
+        this.getFrame(i).then(() => {
+          i++;
+          setTimeout(step, 10);
+        });
+      } else {
+        i++;
+        setTimeout(step, 2);
+      }
+    };
+    setTimeout(step, 250);
   }
 
   private loadImageElement(file: File): Promise<HTMLImageElement> {
@@ -331,5 +373,8 @@ export class VideoLoader {
     this.frameCache.clear();
     this.isSequence = false;
     this.isImageList = false;
+    this.isSeeking = false;
+    this.pendingSeekFrame = null;
+    this.pendingSeekResolvers = [];
   }
 }

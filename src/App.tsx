@@ -314,7 +314,6 @@ export const App: React.FC = () => {
     if (mode !== 'atlas') return;
     const loader = atlasLoaderRef.current;
     if (loader.metadata.totalFrames <= 0) return;
-    if (loader.isVideoPlaying() && forcedFrame === undefined) return;
 
     const targetFrame = forcedFrame !== undefined ? forcedFrame : currentFrame;
     const rawData = loader.getCachedFrame(targetFrame) || (await loader.getFrame(targetFrame));
@@ -325,6 +324,13 @@ export const App: React.FC = () => {
     canvas.height = rawData.height;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+
+    // Fast-path: When chroma key and masks are not active, skip all array allocation and processing!
+    if (!keyingSettings.enabled && !showMask && !keyingSettings.garbageMatte?.enabled) {
+      ctx.putImageData(rawData, 0, 0);
+      setViewportCanvas(canvas);
+      return;
+    }
 
     const processedData = new ImageData(
       new Uint8ClampedArray(rawData.data),
@@ -344,81 +350,6 @@ export const App: React.FC = () => {
   useEffect(() => {
     renderAtlasFrame();
   }, [renderAtlasFrame]);
-
-  // Hardware-accelerated smooth video playback loop
-  useEffect(() => {
-    if (mode !== 'atlas' || !isPlaying) return;
-    const loader = atlasLoaderRef.current;
-    const video = loader.videoElement;
-    if (!video) return;
-
-    let animId: number;
-    let isCancelled = false;
-
-    video.muted = true;
-    const fps = loader.metadata.fps || 30;
-    const startTime = cropStart / fps;
-    const endTime = cropEnd / fps;
-
-    if (video.currentTime < startTime || video.currentTime > endTime) {
-      video.currentTime = startTime;
-    }
-
-    video.play().catch(() => {});
-
-    const processFrame = () => {
-      if (isCancelled) return;
-
-      const curSec = video.currentTime;
-      const curFrame = Math.min(cropEnd, Math.max(cropStart, Math.round(curSec * fps)));
-
-      if (curSec > (cropEnd + 0.5) / fps) {
-        video.currentTime = startTime;
-      } else {
-        const raw = loader.captureCurrentPlayingFrame();
-        if (raw) {
-          loader.setCachedFrame(curFrame, raw);
-          const canvas = document.createElement('canvas');
-          canvas.width = raw.width;
-          canvas.height = raw.height;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            const processedData = new ImageData(
-              new Uint8ClampedArray(raw.data),
-              raw.width,
-              raw.height
-            );
-            ImageProcessor.applyChromaKey(processedData, keyingSettings);
-            if (showMask) {
-              ImageProcessor.convertToAlphaMask(processedData);
-            }
-            ctx.putImageData(processedData, 0, 0);
-            setViewportCanvas(canvas);
-          }
-        }
-      }
-
-      if ('requestVideoFrameCallback' in video) {
-        // @ts-ignore
-        video.requestVideoFrameCallback(processFrame);
-      } else {
-        animId = requestAnimationFrame(processFrame);
-      }
-    };
-
-    if ('requestVideoFrameCallback' in video) {
-      // @ts-ignore
-      video.requestVideoFrameCallback(processFrame);
-    } else {
-      animId = requestAnimationFrame(processFrame);
-    }
-
-    return () => {
-      isCancelled = true;
-      if (animId) cancelAnimationFrame(animId);
-      video.pause();
-    };
-  }, [mode, isPlaying, cropStart, cropEnd, keyingSettings, showMask]);
 
   // Render Sprite in Viewport (Sprites Mode)
   const renderSpriteFrame = useCallback(async () => {

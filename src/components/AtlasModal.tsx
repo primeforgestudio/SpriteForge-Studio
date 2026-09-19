@@ -369,43 +369,6 @@ export const AtlasModal: React.FC<AtlasModalProps> = ({
           />
         </div>
 
-        {/* Floating Top-Right Corner Close Button */}
-        <button
-          onClick={onClose}
-          style={{
-            position: 'absolute',
-            top: 20,
-            right: 20,
-            width: 38,
-            height: 38,
-            borderRadius: '50%',
-            background: 'rgba(38, 14, 18, 0.9)',
-            border: '1.5px solid #dc2626',
-            color: '#ff858f',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            boxShadow: '0 4px 18px rgba(0,0,0,0.7)',
-            zIndex: 30,
-            backdropFilter: 'blur(6px)',
-            transition: 'all 0.15s ease',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = '#dc2626';
-            e.currentTarget.style.color = '#ffffff';
-            e.currentTarget.style.transform = 'scale(1.08)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'rgba(38, 14, 18, 0.9)';
-            e.currentTarget.style.color = '#ff858f';
-            e.currentTarget.style.transform = 'scale(1)';
-          }}
-          title="Close (Esc)"
-        >
-          <X size={20} />
-        </button>
-
         {/* Subtle Bottom Instruction Pill */}
         <div
           style={{

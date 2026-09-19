@@ -33,16 +33,19 @@ export class ImageProcessor {
     imageData: ImageData,
     settings: ChromaKeySettings
   ): ImageData {
+    if (!settings.enabled && !settings.garbageMatte?.enabled) {
+      return imageData;
+    }
     let result = imageData;
     if (settings.enabled) {
       result = this.applyKeylight(imageData, settings);
-    }
-    if (settings.defringe) {
-      this.applySmartDefringe(
-        result,
-        settings.defringeRadius ?? 2,
-        (settings.defringeStrength ?? 85) / 100
-      );
+      if (settings.defringe) {
+        this.applySmartDefringe(
+          result,
+          settings.defringeRadius ?? 2,
+          (settings.defringeStrength ?? 85) / 100
+        );
+      }
     }
     if (settings.garbageMatte?.enabled) {
       this.applyGarbageMatte(result, settings.garbageMatte);

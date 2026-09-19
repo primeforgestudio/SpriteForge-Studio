@@ -78,6 +78,21 @@ export const Timeline: React.FC<TimelineProps> = ({
   const [dragging, setDragging] = useState<'current' | 'start' | 'end' | 'key' | null>(null);
   const dragKeyIndexRef = useRef<number>(-1);
 
+  const pendingFrameRef = useRef<number | null>(null);
+  const rafRef = useRef<number | null>(null);
+
+  const requestPlayheadScrub = useCallback((frame: number) => {
+    pendingFrameRef.current = frame;
+    if (rafRef.current === null) {
+      rafRef.current = requestAnimationFrame(() => {
+        if (pendingFrameRef.current !== null) {
+          setCurrentFrame(pendingFrameRef.current);
+        }
+        rafRef.current = null;
+      });
+    }
+  }, [setCurrentFrame]);
+
   const lastFrame = Math.max(0, totalFrames - 1);
 
   // Smooth Playback Loop
@@ -550,11 +565,19 @@ export const Timeline: React.FC<TimelineProps> = ({
     } else if (dragging === 'end') {
       setCropEnd(Math.min(lastFrame, Math.max(frame, cropStart + 1)));
     } else {
-      setCurrentFrame(frame);
+      requestPlayheadScrub(frame);
     }
   };
 
   const handleMouseUp = () => {
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+    if (pendingFrameRef.current !== null) {
+      setCurrentFrame(pendingFrameRef.current);
+      pendingFrameRef.current = null;
+    }
     setDragging(null);
   };
 
