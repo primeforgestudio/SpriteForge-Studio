@@ -38,6 +38,9 @@ export class VideoLoader {
     return false;
   }
 
+  private seekLock: Promise<any> = Promise.resolve();
+  private latestRequestedFrame: number = -1;
+
   public async loadVideoFile(file: File, customFps = 30): Promise<MediaMetadata> {
     this.close();
 
@@ -51,9 +54,8 @@ export class VideoLoader {
       video.src = url;
 
       let resolved = false;
-      const onReady = () => {
+      const onReady = async () => {
         if (resolved) return;
-        resolved = true;
 
         const duration = video.duration || 0;
         const width = video.videoWidth || 640;
@@ -77,6 +79,32 @@ export class VideoLoader {
         this.offscreenCanvas.width = width;
         this.offscreenCanvas.height = height;
 
+        // Force hardware decode of the very first frame immediately!
+        try {
+          video.currentTime = 0.001;
+          await new Promise<void>((r) => {
+            if (video.readyState >= 2) return r();
+            const done = () => {
+              video.removeEventListener('loadeddata', done);
+              video.removeEventListener('seeked', done);
+              r();
+            };
+            video.addEventListener('loadeddata', done, { once: true });
+            video.addEventListener('seeked', done, { once: true });
+            setTimeout(done, 300);
+          });
+
+          this.offscreenCtx.clearRect(0, 0, width, height);
+          this.offscreenCtx.drawImage(video, 0, 0);
+          const firstData = this.offscreenCtx.getImageData(0, 0, width, height);
+          if (this.isFrameValid(firstData)) {
+            this.frameCache.set(0, firstData);
+          }
+        } catch (e) {
+          console.warn('Initial frame decode warning:', e);
+        }
+
+        resolved = true;
         resolve(this.metadata);
       };
 
@@ -86,7 +114,7 @@ export class VideoLoader {
 
       video.addEventListener('loadeddata', onReady, { once: true });
 
-      if (video.readyState >= 1) {
+      if (video.readyState >= 2) {
         onReady();
       }
 
@@ -94,6 +122,31 @@ export class VideoLoader {
         reject(new Error(`Failed to load video: ${video.error?.message || 'unknown error'}`));
       };
     });
+  }
+
+  public getCachedFrame(frameIndex: number): ImageData | null {
+    const clamped = Math.max(0, Math.min(this.metadata.totalFrames - 1, frameIndex));
+    return this.frameCache.get(clamped) || null;
+  }
+
+  public setCachedFrame(frameIndex: number, data: ImageData): void {
+    const clamped = Math.max(0, Math.min(this.metadata.totalFrames - 1, frameIndex));
+    this.frameCache.set(clamped, data);
+  }
+
+  public isVideoPlaying(): boolean {
+    return !!(this.videoElement && !this.videoElement.paused && !this.videoElement.ended);
+  }
+
+  public captureCurrentPlayingFrame(): ImageData | null {
+    if (!this.videoElement || this.videoElement.readyState < 2) return null;
+    const v = this.videoElement;
+    if (this.offscreenCanvas.width !== v.videoWidth || this.offscreenCanvas.height !== v.videoHeight) {
+      this.offscreenCanvas.width = v.videoWidth;
+      this.offscreenCanvas.height = v.videoHeight;
+    }
+    this.offscreenCtx.drawImage(v, 0, 0);
+    return this.offscreenCtx.getImageData(0, 0, v.videoWidth, v.videoHeight);
   }
 
   public async loadImageFiles(
@@ -147,10 +200,9 @@ export class VideoLoader {
     }
   }
 
-  private seekLock: Promise<any> = Promise.resolve();
-
   public async getFrame(frameIndex: number): Promise<ImageData | null> {
     const clampedIndex = Math.max(0, Math.min(this.metadata.totalFrames - 1, frameIndex));
+    this.latestRequestedFrame = clampedIndex;
 
     if (this.frameCache.has(clampedIndex)) {
       const cached = this.frameCache.get(clampedIndex)!;
@@ -175,7 +227,7 @@ export class VideoLoader {
 
     if (!this.videoElement) return null;
 
-    // Sequential seek queue to prevent decoder lockup
+    // Fast seek without chaining stalled backlog
     return new Promise<ImageData | null>((resolve) => {
       this.seekLock = this.seekLock.then(() => {
         return new Promise<void>((nextSeek) => {
@@ -186,7 +238,15 @@ export class VideoLoader {
             return;
           }
 
-          const targetTime = clampedIndex === 0 ? 0.001 : clampedIndex / this.metadata.fps;
+          // If another frame was requested while waiting in lock, jump immediately
+          const targetIndex = this.latestRequestedFrame >= 0 ? this.latestRequestedFrame : clampedIndex;
+          if (this.frameCache.has(targetIndex)) {
+            resolve(this.frameCache.get(targetIndex)!);
+            nextSeek();
+            return;
+          }
+
+          const targetTime = targetIndex === 0 ? 0.001 : targetIndex / this.metadata.fps;
           const seekTime = Math.min(targetTime, Math.max(0, (video.duration || 0) - 0.001));
 
           const capture = (): ImageData | null => {
@@ -196,14 +256,14 @@ export class VideoLoader {
             this.offscreenCtx.drawImage(video, 0, 0);
             const data = this.offscreenCtx.getImageData(0, 0, video.videoWidth, video.videoHeight);
             if (this.isFrameValid(data)) {
-              this.frameCache.set(clampedIndex, data);
+              this.frameCache.set(targetIndex, data);
               return data;
             }
             return null;
           };
 
-          // If already at target time and video has ready frame
-          if (Math.abs(video.currentTime - seekTime) < 0.002 && video.readyState >= 2) {
+          // If already at seek time and video is ready
+          if (Math.abs(video.currentTime - seekTime) < 0.003 && video.readyState >= 2) {
             const data = capture();
             if (data) {
               resolve(data);
@@ -221,14 +281,7 @@ export class VideoLoader {
             clearTimeout(timeoutId);
             video.removeEventListener('seeked', onSeekComplete);
 
-            this.offscreenCanvas.width = video.videoWidth;
-            this.offscreenCanvas.height = video.videoHeight;
-            this.offscreenCtx.clearRect(0, 0, video.videoWidth, video.videoHeight);
-            this.offscreenCtx.drawImage(video, 0, 0);
-            const data = this.offscreenCtx.getImageData(0, 0, video.videoWidth, video.videoHeight);
-            if (this.isFrameValid(data)) {
-              this.frameCache.set(clampedIndex, data);
-            }
+            const data = capture();
             resolve(data);
             nextSeek();
           };
@@ -239,7 +292,7 @@ export class VideoLoader {
             return;
           }
 
-          timeoutId = setTimeout(onSeekComplete, 300);
+          timeoutId = setTimeout(onSeekComplete, 120);
           video.addEventListener('seeked', onSeekComplete, { once: true });
           video.currentTime = seekTime;
         });

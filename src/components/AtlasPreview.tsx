@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { AppMode } from '../core/types';
-import { RefreshCw, Download, FileText, Film } from 'lucide-react';
+import { RefreshCw, Download, FileText, Film, Maximize2 } from 'lucide-react';
+import { AtlasModal } from './AtlasModal';
 
 interface AtlasPreviewProps {
   mode: AppMode;
@@ -37,6 +38,9 @@ export const AtlasPreview: React.FC<AtlasPreviewProps> = ({
   exportScope = 'single',
   masterTracksCount = 1,
 }) => {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 4 }}>
       {/* Section Header with Dimension Readout */}
@@ -49,10 +53,13 @@ export const AtlasPreview: React.FC<AtlasPreviewProps> = ({
         )}
       </div>
 
-      {/* Checkerboard Preview Box (taller, comfortable) */}
+      {/* Checkerboard Preview Box with View Hover Button */}
       <div
         className="checkerboard"
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
         style={{
+          position: 'relative',
           width: '100%',
           height: 160,
           borderRadius: 8,
@@ -62,20 +69,68 @@ export const AtlasPreview: React.FC<AtlasPreviewProps> = ({
           alignItems: 'center',
           justifyContent: 'center',
           padding: 8,
+          cursor: mode === 'atlas' && atlasCanvas ? 'pointer' : 'default',
+        }}
+        onClick={() => {
+          if (mode === 'atlas' && atlasCanvas) setIsModalOpen(true);
         }}
       >
         {mode === 'atlas' ? (
           atlasCanvas ? (
-            <img
-              src={atlasCanvas.toDataURL()}
-              alt="Atlas Preview"
-              style={{
-                maxWidth: '100%',
-                maxHeight: '100%',
-                objectFit: 'contain',
-                boxShadow: '0 4px 16px rgba(0,0,0,0.7)',
-              }}
-            />
+            <>
+              <img
+                src={atlasCanvas.toDataURL()}
+                alt="Atlas Preview"
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: '100%',
+                  objectFit: 'contain',
+                  boxShadow: '0 4px 16px rgba(0,0,0,0.7)',
+                }}
+              />
+              {/* Hover Overlay with "View" button */}
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  backgroundColor: 'rgba(0, 0, 0, 0.45)',
+                  backdropFilter: 'blur(2px)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  opacity: isHovered ? 1 : 0,
+                  transition: 'opacity 0.18s ease-in-out',
+                  pointerEvents: isHovered ? 'auto' : 'none',
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsModalOpen(true);
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '6px 14px',
+                    borderRadius: 6,
+                    background: '#0d241a',
+                    border: '1px solid var(--accent-green)',
+                    color: 'var(--accent-green)',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    boxShadow: '0 4px 14px rgba(0,0,0,0.6), 0 0 10px rgba(0, 255, 157, 0.3)',
+                    cursor: 'pointer',
+                    transform: isHovered ? 'scale(1)' : 'scale(0.95)',
+                    transition: 'transform 0.15s ease-out',
+                  }}
+                >
+                  <Maximize2 size={13} />
+                  <span>View</span>
+                </button>
+              </div>
+            </>
           ) : (
             <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>No atlas generated</span>
           )
@@ -101,6 +156,14 @@ export const AtlasPreview: React.FC<AtlasPreviewProps> = ({
           </div>
         )}
       </div>
+
+      {/* Enlarged Atlas Modal Lightbox */}
+      <AtlasModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        canvas={atlasCanvas}
+        filename={exportFilename}
+      />
 
       {/* Export File Name Field */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginTop: 4 }}>
