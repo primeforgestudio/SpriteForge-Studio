@@ -337,7 +337,7 @@ QToolTip {
 
 
 def _icons_dir():
-    folder = os.path.join(tempfile.gettempdir(), "AtlasConverter_theme")
+    folder = os.path.join(tempfile.gettempdir(), "SpriteForgeStudio_theme")
     os.makedirs(folder, exist_ok=True)
     return folder
 

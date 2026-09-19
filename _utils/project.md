@@ -1,4 +1,4 @@
-# Проект: Atlas Converter
+# Проект: SpriteForge Studio
 
 ## Что это
 
@@ -38,7 +38,7 @@ Desktop-приложение на `PySide6` для двух сценариев:
   - `AtlasBuilder` — сборка кадров в сетку.
 - `build.py` — сборка standalone-версии под Windows через `PyInstaller`.
 - `build_mac.py` — сборка `.app` под macOS: iconset через `sips`/`iconutil`, правка `Info.plist`, переподпись бандла, опционально DMG. Запускать только на маке.
-- `AtlasConverter.spec` — альтернативная конфигурация сборки.
+- `SpriteForgeStudio.spec` — альтернативная конфигурация сборки.
 - `README.md` — пользовательское описание.
 - `_utils/project.md` — краткая техкарта проекта для агента и людей, которые вынуждены разбираться быстро.
 

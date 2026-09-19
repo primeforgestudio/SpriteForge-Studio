@@ -73,7 +73,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
           <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-            Settings are automatically saved in your browser (localStorage). You can also export and import them as <b>settings.json</b> (fully compatible with ConverterAtlas desktop presets).
+            Settings are automatically saved in your browser (localStorage). You can also export and import them as <b>settings.json</b> (fully compatible with SpriteForge Studio desktop presets).
           </p>
 
           <div style={{ display: 'flex', gap: 8 }}>

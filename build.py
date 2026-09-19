@@ -34,7 +34,7 @@ def clean(folder):
         except PermissionError:
             print(f"Cannot delete '{path}' — file is in use.")
             if name.lower().endswith('.exe'):
-                print("Close AtlasConverter.exe and run the build again!")
+                print("Close SpriteForgeStudio.exe and run the build again!")
             pause()
             sys.exit(1)
 
@@ -44,13 +44,13 @@ for folder in ('dist', 'build', '__pycache__'):
     clean(folder)
 
 # Remove old spec to force fresh generation with current icon
-if os.path.exists('AtlasConverter.spec'):
-    os.remove('AtlasConverter.spec')
+if os.path.exists('SpriteForgeStudio.spec'):
+    os.remove('SpriteForgeStudio.spec')
 
 # Define arguments
 args = [
     'main.py',
-    '--name=AtlasConverter',
+    '--name=SpriteForgeStudio',
     '--windowed',
     '--onefile',
     '--clean',

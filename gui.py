@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                QFormLayout, QDialogButtonBox)
 from PySide6.QtCore import Qt, QTimer, Signal, QSize, QRect, QPoint, QPointF
 from PySide6.QtGui import (QImage, QPixmap, QPainter, QColor, QPen, QBrush, QMouseEvent,
-                           QWheelEvent, QFont, QLinearGradient, QPolygonF)
+                           QWheelEvent, QFont, QLinearGradient, QPolygonF, QIcon)
 import cv2
 import numpy as np
 import av
@@ -1075,7 +1075,10 @@ class ExportVideoDialog(QDialog):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Atlas Converter")
+        self.setWindowTitle("SpriteForge Studio")
+        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.png")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
         self.resize(1600, 900)
 
         self.atlas_loader = VideoLoader()

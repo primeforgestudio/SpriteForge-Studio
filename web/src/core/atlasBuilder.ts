@@ -50,7 +50,7 @@ export class AtlasBuilder {
   }
 
   /**
-   * Generates atlas.json matching the desktop ConverterAtlas format
+   * Generates atlas.json matching the desktop SpriteForge Studio format
    */
   public static createAtlasJson(
     mediaMeta: MediaMetadata,

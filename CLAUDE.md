@@ -1,4 +1,4 @@
-# Atlas Converter
+# SpriteForge Studio
 
 Desktop-приложение на PySide6 для сборки спрайт-атласов из видео/PNG-секвенций и пакетной обработки PNG-файлов.
 
@@ -13,7 +13,7 @@ Desktop-приложение на PySide6 для сборки спрайт-ат�
 - `gui.py` — UI + вся прикладная логика (режимы Atlas и Sprites, таймлайн, превью, экспорт, настройки)
 - `backend.py` — данные и обработка: `VideoLoader`, `ImageProcessor`, `AtlasBuilder`
 - `theme.py` — тёмно-серая тема (AE-style): палитра, QSS, цвета таймлайна и вьюпорта
-- `build.py` / `AtlasConverter.spec` — сборка exe (Windows)
+- `build.py` / `SpriteForgeStudio.spec` — сборка exe (Windows)
 - `build_mac.py` — сборка `.app` (запускать на macOS)
 
 ## Две вкладки (работают параллельно)

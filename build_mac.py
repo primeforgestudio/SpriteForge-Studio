@@ -1,14 +1,14 @@
-"""Сборка macOS-версии AtlasConverter.
+"""Сборка macOS-версии SpriteForge Studio.
 
 Запускать НА МАКЕ — PyInstaller не умеет кросс-компиляцию, из Windows
 .app не собрать.
 
     python3 build_mac.py --check              # проверить окружение, ничего не собирая
-    python3 build_mac.py                      # dist/AtlasConverter.app
+    python3 build_mac.py                      # dist/SpriteForgeStudio.app
     python3 build_mac.py --onefile            # ещё и одиночный бинарник внутри .app
     python3 build_mac.py --universal2         # если Python и все колёса universal2
     python3 build_mac.py --sign "Developer ID Application: Имя (TEAMID)"
-    python3 build_mac.py --dmg                # плюс AtlasConverter.dmg для раздачи
+    python3 build_mac.py --dmg                # плюс SpriteForgeStudio.dmg для раздачи
 
 Что делает:
 1. чистит содержимое dist/ и build/;
@@ -26,8 +26,8 @@ import shutil
 import subprocess
 import sys
 
-APP_NAME = "AtlasConverter"
-BUNDLE_ID = "com.atlasconverter.app"
+APP_NAME = "SpriteForgeStudio"
+BUNDLE_ID = "com.spriteforgestudio.app"
 VERSION = "1.0.0"
 MIN_MACOS = "11.0"
 ICON_SOURCE = "icon.png"
@@ -329,11 +329,11 @@ def main():
         make_dmg(app_path)
 
     print(f"\nBuild finished: {app_path}")
-    print("Run it:  open dist/AtlasConverter.app")
+    print("Run it:  open dist/SpriteForgeStudio.app")
     if identity == "-":
         print("Ad-hoc signature: fine on this machine. For distribution use "
               "--sign \"Developer ID Application: ...\" and notarize with notarytool.")
-        print("If macOS blocks a copied build: xattr -dr com.apple.quarantine dist/AtlasConverter.app")
+        print("If macOS blocks a copied build: xattr -dr com.apple.quarantine dist/SpriteForgeStudio.app")
 
 
 if __name__ == "__main__":

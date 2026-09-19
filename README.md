@@ -1,8 +1,8 @@
-# Atlas Converter
+# SpriteForge Studio
 
 Инструмент для создания спрайт-атласов из видео и PNG-секвенций. Убирает хромакей, нарезает кадры, собирает атлас — или пакетно обрабатывает отдельные спрайты.
 
-Установка не нужна — просто запустите `AtlasConverter.exe`.
+Установка не нужна — просто запустите `SpriteForgeStudio.exe` или откройте веб-версию в каталоге `web/`.
 
 ---
 
@@ -127,7 +127,7 @@ pip install pyinstaller
 python build.py
 ```
 
-Результат — `dist/AtlasConverter.exe`.
+Результат — `dist/SpriteForgeStudio.exe`.
 
 Сборка под macOS (запускать на маке — PyInstaller не кросс-компилирует):
 
@@ -136,13 +136,13 @@ pip3 install -r requirements.txt
 python3 build_mac.py
 ```
 
-Результат — `dist/AtlasConverter.app`. Иконка делается из `icon.png` штатными `sips` и `iconutil`, бандл подписывается ad-hoc — этого хватает для запуска на своей машине.
+Результат — `dist/SpriteForgeStudio.app`. Иконка делается из `icon.png` штатными `sips` и `iconutil`, бандл подписывается ad-hoc — этого хватает для запуска на своей машине.
 
 Флаги:
 
 - `--onefile` — один бинарник внутри `.app` (стартует медленнее, распаковывает ~150 МБ);
 - `--universal2` — сборка под Intel и Apple Silicon сразу, работает только если Python и все колёса universal2;
 - `--sign "Developer ID Application: Имя (TEAMID)"` — подпись для раздачи, добавляет hardened runtime и метку времени;
-- `--dmg` — собрать ещё и `dist/AtlasConverter.dmg`.
+- `--dmg` — собрать ещё и `dist/SpriteForgeStudio.dmg`.
 
-Если скачанную сборку macOS блокирует: `xattr -dr com.apple.quarantine dist/AtlasConverter.app`.
+Если скачанную сборку macOS блокирует: `xattr -dr com.apple.quarantine dist/SpriteForgeStudio.app`.

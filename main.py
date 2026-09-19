@@ -6,15 +6,15 @@ import tempfile
 
 def show_startup_error(log_path):
     """Сообщение о падении старта средствами самой ОС — Qt может быть ещё не жив."""
-    message = f"AtlasConverter failed to start.\nLog: {log_path}"
+    message = f"SpriteForge Studio failed to start.\nLog: {log_path}"
     try:
         if sys.platform == "win32":
             import ctypes
-            ctypes.windll.user32.MessageBoxW(0, message, "AtlasConverter", 0x10)
+            ctypes.windll.user32.MessageBoxW(0, message, "SpriteForge Studio", 0x10)
         elif sys.platform == "darwin":
             import subprocess
             script = (
-                'display dialog "{}" with title "AtlasConverter" '
+                'display dialog "{}" with title "SpriteForge Studio" '
                 'buttons {{"OK"}} default button "OK" with icon stop'
             ).format(message.replace('"', "'").replace("\n", "\\n"))
             subprocess.run(["osascript", "-e", script], check=False)
@@ -37,7 +37,7 @@ def main():
         sys.exit(app.exec())
     except Exception:
         err = traceback.format_exc()
-        log_path = os.path.join(tempfile.gettempdir(), "AtlasConverter_startup.log")
+        log_path = os.path.join(tempfile.gettempdir(), "SpriteForgeStudio_startup.log")
         try:
             with open(log_path, "w", encoding="utf-8") as f:
                 f.write(err)
