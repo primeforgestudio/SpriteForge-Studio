@@ -310,13 +310,16 @@ export const App: React.FC = () => {
     }
   };
 
+  const currentFrameRef = useRef(currentFrame);
+  currentFrameRef.current = currentFrame;
+
   // Render Atlas Frame in Viewport
   const renderAtlasFrame = useCallback(async (forcedFrame?: number, fastPreview: boolean = false) => {
     if (mode !== 'atlas') return;
     const loader = atlasLoaderRef.current;
     if (loader.metadata.totalFrames <= 0) return;
 
-    const targetFrame = forcedFrame !== undefined ? forcedFrame : currentFrame;
+    const targetFrame = forcedFrame !== undefined ? forcedFrame : currentFrameRef.current;
     const rawData = loader.getCachedFrame(targetFrame) || (await loader.getFrame(targetFrame));
     if (!rawData) return;
 
@@ -353,7 +356,7 @@ export const App: React.FC = () => {
     ctx.putImageData(processedData, 0, 0);
 
     setViewportCanvas(canvas);
-  }, [mode, currentFrame, keyingSettings, showMask]);
+  }, [mode, keyingSettings, showMask]);
 
   // When paused or scrubbing, update viewport frame
   useEffect(() => {
@@ -361,64 +364,127 @@ export const App: React.FC = () => {
     renderAtlasFrame(currentFrame, false);
   }, [renderAtlasFrame, currentFrame, isPlaying]);
 
-  // Hardware Video Playback Loop (Silky Smooth 60 FPS GPU Playback)
+  // Unified Playback Loop (Both Video and PNG Sequences)
   useEffect(() => {
+    if (mode !== 'atlas') return;
     const loader = atlasLoaderRef.current;
-    if (mode !== 'atlas' || !loader.videoElement || loader.isSequence || loader.metadata.totalFrames <= 1) {
+    if (loader.metadata.totalFrames <= 1) return;
+
+    if (!isPlaying) {
+      if (loader.videoElement && !loader.videoElement.paused) {
+        loader.videoElement.pause();
+      }
       return;
     }
 
-    const video = loader.videoElement;
+    // CASE A: PNG Sequence Mode (RAF software loop)
+    if (loader.isSequence || !loader.videoElement) {
+      let animId: number;
+      let lastTime = performance.now();
+      const frameDuration = 1000 / (loader.metadata.fps || 30);
 
-    if (isPlaying) {
-      const startTime = currentFrame / loader.metadata.fps;
-      if (Math.abs(video.currentTime - startTime) > 0.05) {
-        video.currentTime = startTime;
-      }
-      video.play().catch((err) => console.warn('Video play error:', err));
-
-      let handle: any;
-      let isSubscribed = true;
-
-      const onVideoFrame = () => {
-        if (!isSubscribed || video.paused || video.ended) return;
-
-        const time = video.currentTime;
-        const frame = Math.round(time * loader.metadata.fps);
-
-        if (frame > cropEnd) {
-          video.currentTime = cropStart / loader.metadata.fps;
-        } else {
-          setCurrentFrame(frame);
-          renderAtlasFrame(frame, true);
+      const tickSequence = (now: number) => {
+        const elapsed = now - lastTime;
+        if (elapsed >= frameDuration) {
+          const advance = Math.floor(elapsed / frameDuration);
+          lastTime = now - (elapsed % frameDuration);
+          setCurrentFrame((prev) => {
+            let next = prev + advance;
+            if (next > cropEnd) {
+              next = cropStart;
+            }
+            return next;
+          });
         }
-
-        if ('requestVideoFrameCallback' in video) {
-          handle = (video as any).requestVideoFrameCallback(onVideoFrame);
-        } else {
-          handle = requestAnimationFrame(onVideoFrame);
-        }
+        animId = requestAnimationFrame(tickSequence);
       };
+
+      animId = requestAnimationFrame(tickSequence);
+      return () => cancelAnimationFrame(animId);
+    }
+
+    // CASE B: Video File Mode (Hardware Accelerated Video Playback)
+    const video = loader.videoElement;
+    const fps = loader.metadata.fps || 30;
+
+    // Start video playback from current playhead position
+    const startSec = Math.max(0, currentFrameRef.current / fps);
+    if (Math.abs(video.currentTime - startSec) > 0.08) {
+      video.currentTime = startSec;
+    }
+
+    let isCancelled = false;
+    let animId: number;
+
+    const playPromise = video.play();
+    if (playPromise) {
+      playPromise.catch((e) => {
+        console.warn('Video play interrupted or failed:', e);
+      });
+    }
+
+    const onVideoFrame = () => {
+      if (isCancelled || video.paused || video.ended) return;
+
+      const time = video.currentTime;
+      let frame = Math.round(time * fps);
+
+      if (frame > cropEnd) {
+        video.currentTime = cropStart / fps;
+        frame = cropStart;
+      }
+
+      setCurrentFrame(frame);
+
+      // Render playing frame immediately to viewport
+      if (
+        !viewportCanvasRef.current ||
+        viewportCanvasRef.current.width !== video.videoWidth ||
+        viewportCanvasRef.current.height !== video.videoHeight
+      ) {
+        viewportCanvasRef.current = document.createElement('canvas');
+        viewportCanvasRef.current.width = video.videoWidth;
+        viewportCanvasRef.current.height = video.videoHeight;
+      }
+
+      const canvas = viewportCanvasRef.current;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        if (!keyingSettings.enabled && !showMask && !keyingSettings.garbageMatte?.enabled) {
+          ctx.drawImage(video, 0, 0);
+          setViewportCanvas(canvas);
+        } else {
+          const raw = loader.captureCurrentPlayingFrame();
+          if (raw) {
+            ImageProcessor.applyChromaKey(raw, keyingSettings, true);
+            if (showMask) {
+              ImageProcessor.convertToAlphaMask(raw);
+            }
+            ctx.putImageData(raw, 0, 0);
+            setViewportCanvas(canvas);
+          }
+        }
+      }
 
       if ('requestVideoFrameCallback' in video) {
-        handle = (video as any).requestVideoFrameCallback(onVideoFrame);
+        (video as any).requestVideoFrameCallback(onVideoFrame);
       } else {
-        handle = requestAnimationFrame(onVideoFrame);
+        animId = requestAnimationFrame(onVideoFrame);
       }
+    };
 
-      return () => {
-        isSubscribed = false;
-        if ('cancelVideoFrameCallback' in video && handle) {
-          (video as any).cancelVideoFrameCallback(handle);
-        } else if (handle) {
-          cancelAnimationFrame(handle);
-        }
-        video.pause();
-      };
+    if ('requestVideoFrameCallback' in video) {
+      (video as any).requestVideoFrameCallback(onVideoFrame);
     } else {
-      video.pause();
+      animId = requestAnimationFrame(onVideoFrame);
     }
-  }, [isPlaying, mode, cropStart, cropEnd, renderAtlasFrame]);
+
+    return () => {
+      isCancelled = true;
+      if (animId) cancelAnimationFrame(animId);
+      video.pause();
+    };
+  }, [isPlaying, mode, cropStart, cropEnd, keyingSettings, showMask]);
 
   // Render Sprite in Viewport (Sprites Mode)
   const renderSpriteFrame = useCallback(async () => {

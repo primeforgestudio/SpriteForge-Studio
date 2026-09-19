@@ -97,39 +97,7 @@ const TimelineComponent: React.FC<TimelineProps> = ({
 
   const lastFrame = Math.max(0, totalFrames - 1);
 
-  // Smooth Playback Loop (Only runs for PNG image sequences; video files use hardware GPU play in App)
-  useEffect(() => {
-    if (!isPlaying || totalFrames <= 1 || !isSequence) return;
 
-    let animId: number;
-    let lastTime = performance.now();
-    const frameDuration = 1000 / fps;
-
-    const tick = (now: number) => {
-      const elapsed = now - lastTime;
-      if (elapsed >= frameDuration) {
-        const framesToAdvance = Math.floor(elapsed / frameDuration);
-        lastTime = now - (elapsed % frameDuration);
-
-        setCurrentFrame((prev) => {
-          let next = prev + framesToAdvance;
-          if (next > cropEnd) {
-            if (isLooping) {
-              next = cropStart;
-            } else {
-              setIsPlaying(false);
-              return cropEnd;
-            }
-          }
-          return next;
-        });
-      }
-      animId = requestAnimationFrame(tick);
-    };
-
-    animId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(animId);
-  }, [isPlaying, fps, totalFrames, cropStart, cropEnd, isLooping, isSequence, setCurrentFrame, setIsPlaying]);
 
   // Coordinate conversion helpers
   const getTrackBounds = useCallback((width: number) => {
