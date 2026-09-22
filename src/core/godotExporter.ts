@@ -1,4 +1,4 @@
-import { AtlasSettings } from './types';
+import { AtlasSettings, PackedFrameItem, SpriteMesh } from './types';
 
 export class GodotExporter {
   /**
@@ -9,11 +9,16 @@ export class GodotExporter {
     atlasFilename: string,
     settings: AtlasSettings,
     framesCount: number,
-    fps: number
+    fps: number,
+    packedFrames?: PackedFrameItem[],
+    frameIndicesMap?: number[]
   ): string {
     const { frameWidth, frameHeight, columns } = settings;
     const cleanAnimName = animationName.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_]/g, '_') || 'default';
-    const totalFrames = Math.min(framesCount, settings.columns * settings.rows);
+    const uniqueFramesCount = frameIndicesMap
+      ? new Set(frameIndicesMap).size
+      : (packedFrames ? packedFrames.length : Math.min(framesCount, settings.columns * settings.rows));
+    const totalFrames = packedFrames ? packedFrames.length : uniqueFramesCount;
     const loadSteps = totalFrames + 2;
 
     const lines: string[] = [];
@@ -30,16 +35,23 @@ export class GodotExporter {
     lines.push(`[ext_resource type="Texture2D" path="${atlasFilename}" id="1_atlas"]`);
     lines.push('');
 
-    // SubResources: AtlasTexture for each frame
+    // SubResources: AtlasTexture for each frame in atlas
     for (let i = 0; i < totalFrames; i++) {
-      const col = i % columns;
-      const row = Math.floor(i / columns);
-      const x = col * frameWidth;
-      const y = row * frameHeight;
-
       lines.push(`[sub_resource type="AtlasTexture" id="AtlasTexture_${i}"]`);
       lines.push('atlas = ExtResource("1_atlas")');
-      lines.push(`region = Rect2(${x}, ${y}, ${frameWidth}, ${frameHeight})`);
+      if (packedFrames && packedFrames[i]) {
+        const pf = packedFrames[i];
+        lines.push(`region = Rect2(${pf.x}, ${pf.y}, ${pf.width}, ${pf.height})`);
+        const marginR = pf.sourceWidth - pf.width - pf.offsetX;
+        const marginB = pf.sourceHeight - pf.height - pf.offsetY;
+        lines.push(`margin = Rect2(${pf.offsetX}, ${pf.offsetY}, ${marginR}, ${marginB})`);
+      } else {
+        const col = i % columns;
+        const row = Math.floor(i / columns);
+        const x = col * frameWidth;
+        const y = row * frameHeight;
+        lines.push(`region = Rect2(${x}, ${y}, ${frameWidth}, ${frameHeight})`);
+      }
       lines.push('');
     }
 
@@ -48,11 +60,12 @@ export class GodotExporter {
     lines.push('animations = [{');
     lines.push('"frames": [');
 
-    for (let i = 0; i < totalFrames; i++) {
-      const isLast = i === totalFrames - 1;
+    for (let i = 0; i < framesCount; i++) {
+      const isLast = i === framesCount - 1;
+      const uniqueIdx = frameIndicesMap && frameIndicesMap[i] !== undefined ? frameIndicesMap[i] : i;
       lines.push(`{`);
       lines.push(`"duration": 1.0,`);
-      lines.push(`"texture": SubResource("AtlasTexture_${i}")`);
+      lines.push(`"texture": SubResource("AtlasTexture_${uniqueIdx}")`);
       lines.push(`}${isLast ? '' : ','}`);
     }
 
@@ -76,10 +89,14 @@ export class GodotExporter {
       fps: number;
       loop: boolean;
       frameIndices: number[];
-    }[]
+    }[],
+    packedFrames?: PackedFrameItem[],
+    frameIndicesMap?: number[]
   ): string {
     const { frameWidth, frameHeight, columns } = settings;
-    const totalFrames = tracksMeta.reduce((acc, t) => acc + t.frameIndices.length, 0);
+    const totalInputFrames = tracksMeta.reduce((acc, t) => acc + t.frameIndices.length, 0);
+    const uniqueCount = frameIndicesMap ? new Set(frameIndicesMap).size : (packedFrames ? packedFrames.length : totalInputFrames);
+    const totalFrames = packedFrames ? packedFrames.length : uniqueCount;
     const loadSteps = totalFrames + 2;
 
     const lines: string[] = [];
@@ -97,14 +114,21 @@ export class GodotExporter {
 
     // SubResources: AtlasTexture for each frame in atlas
     for (let i = 0; i < totalFrames; i++) {
-      const col = i % columns;
-      const row = Math.floor(i / columns);
-      const x = col * frameWidth;
-      const y = row * frameHeight;
-
       lines.push(`[sub_resource type="AtlasTexture" id="AtlasTexture_${i}"]`);
       lines.push('atlas = ExtResource("1_atlas")');
-      lines.push(`region = Rect2(${x}, ${y}, ${frameWidth}, ${frameHeight})`);
+      if (packedFrames && packedFrames[i]) {
+        const pf = packedFrames[i];
+        lines.push(`region = Rect2(${pf.x}, ${pf.y}, ${pf.width}, ${pf.height})`);
+        const marginR = pf.sourceWidth - pf.width - pf.offsetX;
+        const marginB = pf.sourceHeight - pf.height - pf.offsetY;
+        lines.push(`margin = Rect2(${pf.offsetX}, ${pf.offsetY}, ${marginR}, ${marginB})`);
+      } else {
+        const col = i % columns;
+        const row = Math.floor(i / columns);
+        const x = col * frameWidth;
+        const y = row * frameHeight;
+        lines.push(`region = Rect2(${x}, ${y}, ${frameWidth}, ${frameHeight})`);
+      }
       lines.push('');
     }
 
@@ -120,9 +144,10 @@ export class GodotExporter {
 
       track.frameIndices.forEach((frameIdx, fIdx) => {
         const isLastFrame = fIdx === track.frameIndices.length - 1;
+        const uniqueIdx = frameIndicesMap && frameIndicesMap[frameIdx] !== undefined ? frameIndicesMap[frameIdx] : frameIdx;
         lines.push('{');
         lines.push('"duration": 1.0,');
-        lines.push(`"texture": SubResource("AtlasTexture_${frameIdx}")`);
+        lines.push(`"texture": SubResource("AtlasTexture_${uniqueIdx}")`);
         lines.push(`}${isLastFrame ? '' : ','}`);
       });
 
@@ -146,7 +171,8 @@ export class GodotExporter {
     sceneName: string,
     framesTresFilename: string,
     settings: AtlasSettings,
-    defaultAnimName: string = 'idle'
+    defaultAnimName: string = 'idle',
+    spriteMesh?: SpriteMesh
   ): string {
     const cleanSceneName =
       sceneName.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_]/g, '_') || 'Character';
@@ -234,6 +260,30 @@ export class GodotExporter {
     lines.push(`autoplay = "${defaultAnimName}"`);
     lines.push(`offset = Vector2(${spriteOffsetX}, ${spriteOffsetY})`);
     lines.push('');
+
+    // Optional High-Performance Polygon2D Node (Mobile & iGaming Overdraw Killer)
+    if (spriteMesh && (settings.meshSettings?.enabled ?? true)) {
+      lines.push(`; 2D Mesh Overdraw Optimizer (${spriteMesh.vertexCount} verts, ${spriteMesh.triangleCount} tris, ${spriteMesh.areaSavingsPercent}% fillrate saved)`);
+      lines.push(`[node name="Polygon2D" type="Polygon2D" parent="."]`);
+      lines.push('visible = false');
+
+      const polyVerts = spriteMesh.vertices.map((v) => {
+        const rx = (v[0] - pivot.x * settings.frameWidth).toFixed(1);
+        const ry = (v[1] - pivot.y * settings.frameHeight).toFixed(1);
+        return `${rx}, ${ry}`;
+      });
+      lines.push(`polygon = PackedVector2Array(${polyVerts.join(', ')})`);
+
+      const uvs = spriteMesh.vertices.map((v) => `${v[0].toFixed(1)}, ${v[1].toFixed(1)}`);
+      lines.push(`uv = PackedVector2Array(${uvs.join(', ')})`);
+
+      const polyIndices: string[] = [];
+      for (let i = 0; i < spriteMesh.indices.length; i += 3) {
+        polyIndices.push(`PackedInt32Array(${spriteMesh.indices[i]}, ${spriteMesh.indices[i + 1]}, ${spriteMesh.indices[i + 2]})`);
+      }
+      lines.push(`polygons = [${polyIndices.join(', ')}]`);
+      lines.push('');
+    }
 
     // Feet CollisionShape2D Node
     if (collision.feet.enabled && feetResId) {

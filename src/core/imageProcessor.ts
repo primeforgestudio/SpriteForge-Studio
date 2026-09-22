@@ -275,11 +275,29 @@ export class ImageProcessor {
     const sg = sG / 255.0;
     const sb = sB / 255.0;
 
+    // YCbCr reference chrominance of key color
+    const sCb = -0.1687 * sr - 0.3313 * sg + 0.5 * sb + 0.5;
+    const sCr = 0.5 * sr - 0.4187 * sg - 0.0813 * sb + 0.5;
+
     const bal = Math.max(0, Math.min(1, settings.screenBalance / 100.0));
     const gain = Math.max(0.01, settings.gain / 100.0);
     const cb = settings.clipBlack / 100.0;
     const cw = Math.max(cb + 0.001, settings.clipWhite / 100.0);
     const despillAmt = settings.despill ? settings.despillAmount / 100.0 : 0.0;
+    const despillWarmSafe = settings.despillWarmSafe !== false;
+    const khakiSupp = (settings.khakiSuppress ?? 0) / 100.0;
+
+    // Secondary Key (Shadow / Khaki / Dark Crevice Key)
+    const hasSecKey = !!settings.secondaryKey?.enabled;
+    const secColor = settings.secondaryKey?.color ?? [27, 78, 43];
+    const sec_sr = secColor[0] / 255.0;
+    const sec_sg = secColor[1] / 255.0;
+    const sec_sb = secColor[2] / 255.0;
+    const sec_sCb = -0.1687 * sec_sr - 0.3313 * sec_sg + 0.5 * sec_sb + 0.5;
+    const sec_sCr = 0.5 * sec_sr - 0.4187 * sec_sg - 0.0813 * sec_sb + 0.5;
+    const sec_sComp = bal * sec_sr + (1.0 - bal) * sec_sb;
+    const sec_sExcess = Math.max(0.001, sec_sg - sec_sComp);
+    const secGain = Math.max(0.01, (settings.secondaryKey?.gain ?? 100) / 100.0);
 
     // Detect dominant screen channel (Green, Blue, or Red)
     let dominant: 'g' | 'b' | 'r' = 'g';
@@ -318,41 +336,110 @@ export class ImageProcessor {
 
       if (dominant === 'g') {
         pComp = bal * r + (1.0 - bal) * b;
+        // Warm surface protection: prevents red cloth and skin from turning khaki
+        if (despillWarmSafe && r > b) {
+          pComp = Math.min(pComp, Math.max(b * 1.25, 0.08));
+        }
         pExcess = g - pComp;
 
-        // Despill Green
+        // Despill Green with Luminance Preservation
         if (despillAmt > 0 && g > pComp) {
-          const excess = (g - pComp) * despillAmt;
-          g = Math.max(0, g - excess);
+          const oldLum = 0.299 * r + 0.587 * g + 0.114 * b;
+          g = g * (1.0 - despillAmt) + pComp * despillAmt;
+          const newLum = 0.299 * r + 0.587 * g + 0.114 * b;
+          if (newLum > 0.001) {
+            const boost = Math.min(1.3, oldLum / newLum);
+            r = Math.min(1.0, r * boost);
+            g = Math.min(1.0, g * boost);
+            b = Math.min(1.0, b * boost);
+          }
+          data[idx] = Math.round(r * 255.0);
           data[idx + 1] = Math.round(g * 255.0);
+          data[idx + 2] = Math.round(b * 255.0);
         }
       } else if (dominant === 'b') {
         pComp = bal * r + (1.0 - bal) * g;
         pExcess = b - pComp;
 
-        // Despill Blue
+        // Despill Blue with Luminance Preservation
         if (despillAmt > 0 && b > pComp) {
-          const excess = (b - pComp) * despillAmt;
-          b = Math.max(0, b - excess);
+          const oldLum = 0.299 * r + 0.587 * g + 0.114 * b;
+          b = b * (1.0 - despillAmt) + pComp * despillAmt;
+          const newLum = 0.299 * r + 0.587 * g + 0.114 * b;
+          if (newLum > 0.001) {
+            const boost = Math.min(1.3, oldLum / newLum);
+            r = Math.min(1.0, r * boost);
+            g = Math.min(1.0, g * boost);
+            b = Math.min(1.0, b * boost);
+          }
+          data[idx] = Math.round(r * 255.0);
+          data[idx + 1] = Math.round(g * 255.0);
           data[idx + 2] = Math.round(b * 255.0);
         }
       } else {
         pComp = bal * g + (1.0 - bal) * b;
         pExcess = r - pComp;
 
-        // Despill Red
+        // Despill Red with Luminance Preservation
         if (despillAmt > 0 && r > pComp) {
-          const excess = (r - pComp) * despillAmt;
-          r = Math.max(0, r - excess);
+          const oldLum = 0.299 * r + 0.587 * g + 0.114 * b;
+          r = r * (1.0 - despillAmt) + pComp * despillAmt;
+          const newLum = 0.299 * r + 0.587 * g + 0.114 * b;
+          if (newLum > 0.001) {
+            const boost = Math.min(1.3, oldLum / newLum);
+            r = Math.min(1.0, r * boost);
+            g = Math.min(1.0, g * boost);
+            b = Math.min(1.0, b * boost);
+          }
           data[idx] = Math.round(r * 255.0);
+          data[idx + 1] = Math.round(g * 255.0);
+          data[idx + 2] = Math.round(b * 255.0);
         }
       }
 
-      // Raw alpha from color difference projection
-      let alphaRaw = 1.0;
+      // 1. Color Difference RGB Keylight Alpha
+      let rgbAlpha = 1.0;
       if (pExcess > 0) {
         const keyRatio = (pExcess / sExcess) * gain;
-        alphaRaw = Math.max(0, 1.0 - keyRatio);
+        rgbAlpha = Math.max(0, 1.0 - keyRatio);
+      }
+
+      // 2. YCbCr Chrominance model (isolates green chroma independent of shadows)
+      const pCb = -0.1687 * r - 0.3313 * g + 0.5 * b + 0.5;
+      const pCr = 0.5 * r - 0.4187 * g - 0.0813 * b + 0.5;
+      const dCb = pCb - sCb;
+      const dCr = pCr - sCr;
+      const chromaDist = Math.sqrt(dCb * dCb + dCr * dCr);
+      const t = Math.max(0, Math.min(1, (chromaDist - 0.02) / (0.18 - 0.02)));
+      const chromaFactor = t * t * (3.0 - 2.0 * t);
+
+      let alphaRaw = Math.min(rgbAlpha, chromaFactor);
+
+      // Secondary Key (Shadow / Khaki / Dark Crevice Key)
+      if (hasSecKey) {
+        const secExcess = g - (bal * r + (1.0 - bal) * b);
+        let secRgbAlpha = 1.0;
+        if (secExcess > 0) {
+          secRgbAlpha = Math.max(0, 1.0 - (secExcess / sec_sExcess) * secGain);
+        }
+        const sec_dCb = pCb - sec_sCb;
+        const sec_dCr = pCr - sec_sCr;
+        const secDist = Math.sqrt(sec_dCb * sec_dCb + sec_dCr * sec_dCr);
+        const secT = Math.max(0, Math.min(1, (secDist - 0.02) / (0.18 - 0.02)));
+        const secFactor = secT * secT * (3.0 - 2.0 * secT);
+        alphaRaw = Math.min(alphaRaw, Math.min(secRgbAlpha, secFactor));
+      }
+
+      // Khaki / Shadow Hole Suppressor
+      if (khakiSupp > 0) {
+        const maxVal = Math.max(r, g, b);
+        const minVal = Math.min(r, g, b);
+        const delta = maxVal - minVal;
+        if (delta > 0.03 && g > b && g >= r * 0.7) {
+          const khakiWeight = (g - b) / Math.max(0.05, maxVal);
+          const suppFactor = Math.max(0, Math.min(1, khakiWeight * khakiSupp * 2.2));
+          alphaRaw = alphaRaw * (1.0 - suppFactor);
+        }
       }
 
       // Keylight Matte Levels: Clip Black & Clip White
@@ -390,7 +477,8 @@ export class ImageProcessor {
         width,
         height,
         settings.erodePx,
-        settings.blurPx
+        settings.blurPx,
+        data
       );
     }
 
@@ -514,14 +602,15 @@ export class ImageProcessor {
   }
 
   /**
-   * Fast Separable Alpha Refinement (Erode & Blur) - 1000x faster than brute-force
+   * Fast Separable Alpha Refinement (Erode & Blur) with Ink Outline Protection
    */
   private static refineAlpha(
     alpha: Float32Array,
     w: number,
     h: number,
     erodePx: number,
-    blurPx: number
+    blurPx: number,
+    pixelData?: Uint8ClampedArray
   ): Float32Array {
     let result = alpha;
     const total = w * h;
@@ -547,7 +636,7 @@ export class ImageProcessor {
         }
       }
 
-      // Pass 2: Vertical Min
+      // Pass 2: Vertical Min + Ink Outline Protection
       for (let x = 0; x < w; x++) {
         for (let y = 0; y < h; y++) {
           let minVal = temp[y * w + x];
@@ -557,7 +646,17 @@ export class ImageProcessor {
             const v = temp[k * w + x];
             if (v < minVal) minVal = v;
           }
-          eroded[y * w + x] = minVal;
+
+          // Black Edge / Ink Outline Snapping: protect dark border lines from being eaten away
+          const i = y * w + x;
+          if (pixelData) {
+            const pxIdx = i * 4;
+            const lum = (0.299 * pixelData[pxIdx] + 0.587 * pixelData[pxIdx + 1] + 0.114 * pixelData[pxIdx + 2]) / 255.0;
+            if (lum < 0.28 && alpha[i] > 0.12) {
+              minVal = Math.max(minVal, alpha[i] * 0.95);
+            }
+          }
+          eroded[i] = minVal;
         }
       }
 

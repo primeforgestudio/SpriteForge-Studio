@@ -17,6 +17,7 @@ export class VideoLoader {
   };
 
   private frameCache = new Map<number, ImageData>();
+  private keyedFrameCache = new Map<string, ImageData>();
   private offscreenCanvas: HTMLCanvasElement;
   private offscreenCtx: CanvasRenderingContext2D;
 
@@ -161,6 +162,29 @@ export class VideoLoader {
     return this.offscreenCtx.getImageData(0, 0, v.videoWidth, v.videoHeight);
   }
 
+  public getKeyedFrame(frameIndex: number, settingsKey: string): ImageData | null {
+    const key = `${frameIndex}_${settingsKey}`;
+    return this.keyedFrameCache.get(key) || null;
+  }
+
+  public setKeyedFrame(frameIndex: number, settingsKey: string, data: ImageData): void {
+    const key = `${frameIndex}_${settingsKey}`;
+    this.keyedFrameCache.set(key, data);
+  }
+
+  public clearKeyedCache(): void {
+    this.keyedFrameCache.clear();
+  }
+
+  public captureFrameToCache(frameIndex: number): ImageData | null {
+    const data = this.captureCurrentPlayingFrame();
+    if (data && this.isFrameValid(data)) {
+      this.setCachedFrame(frameIndex, data);
+      return data;
+    }
+    return null;
+  }
+
   public async loadImageFiles(
     files: File[],
     isImageList = false,
@@ -238,6 +262,11 @@ export class VideoLoader {
 
     if (!this.videoElement) return null;
 
+    // If video is actively playing, never interrupt playback with a seek!
+    if (this.isVideoPlaying()) {
+      return this.frameCache.get(clampedIndex) || null;
+    }
+
     // 2. If already seeking, record this target as the latest pending frame
     // This drops all intermediate skipped frames and eliminates backlog!
     if (this.isSeeking) {
@@ -254,6 +283,7 @@ export class VideoLoader {
   private executeSeek(targetIndex: number): Promise<ImageData | null> {
     const video = this.videoElement;
     if (!video) return Promise.resolve(null);
+    if (this.isVideoPlaying()) return Promise.resolve(this.frameCache.get(targetIndex) || null);
 
     this.isSeeking = true;
 
@@ -319,8 +349,9 @@ export class VideoLoader {
   }
 
   public async preloadMarkers(markers: number[]): Promise<void> {
-    if (!this.videoElement || this.isSequence) return;
+    if (!this.videoElement || this.isSequence || this.isVideoPlaying()) return;
     for (const f of markers) {
+      if (!this.videoElement || this.isSequence || this.isVideoPlaying()) return;
       if (!this.frameCache.has(f)) {
         await this.getFrame(f);
       }
@@ -358,6 +389,7 @@ export class VideoLoader {
 
   public clearCache() {
     this.frameCache.clear();
+    this.keyedFrameCache.clear();
   }
 
   public close() {
@@ -373,6 +405,7 @@ export class VideoLoader {
     this.imageFiles = [];
     this.imageElements = [];
     this.frameCache.clear();
+    this.keyedFrameCache.clear();
     this.isSequence = false;
     this.isImageList = false;
     this.isSeeking = false;

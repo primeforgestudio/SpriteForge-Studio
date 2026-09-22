@@ -19,7 +19,7 @@ interface HeaderProps {
   fps: number;
 }
 
-export const Header: React.FC<HeaderProps> = ({
+const HeaderComponent: React.FC<HeaderProps> = ({
   onLoadFiles,
   onOpenSettings,
   activeFilename,
@@ -37,20 +37,20 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="top-header">
       {/* Left: Brand Logo & Title */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        {/* Neon Green "SF" Logo Badge */}
+        {/* Matte Orange "SF" Logo Badge */}
         <div
           style={{
             width: 24,
             height: 24,
             borderRadius: 6,
-            backgroundColor: 'var(--accent-green)',
-            color: '#000000',
-            fontWeight: 900,
+            backgroundColor: 'var(--accent-orange)',
+            color: '#ffffff',
+            fontWeight: 800,
             fontSize: 12,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            boxShadow: '0 0 12px var(--accent-green-glow)',
+            boxShadow: 'none',
             letterSpacing: '-0.5px',
           }}
         >
@@ -72,9 +72,9 @@ export const Header: React.FC<HeaderProps> = ({
             style={{
               fontSize: 9,
               fontWeight: 700,
-              background: '#12261e',
-              color: 'var(--accent-green)',
-              border: '1px solid #1e4d36',
+              background: 'rgba(255, 92, 38, 0.12)',
+              color: 'var(--accent-orange)',
+              border: '1px solid rgba(255, 92, 38, 0.3)',
               padding: '1px 5px',
               borderRadius: 4,
               letterSpacing: '0.5px',
@@ -106,9 +106,9 @@ export const Header: React.FC<HeaderProps> = ({
             style={{
               fontSize: 10,
               fontWeight: 700,
-              color: 'var(--accent-green)',
-              background: 'rgba(0, 240, 132, 0.1)',
-              border: '1px solid rgba(0, 240, 132, 0.3)',
+              color: 'var(--accent-orange)',
+              background: 'rgba(255, 92, 38, 0.12)',
+              border: '1px solid rgba(255, 92, 38, 0.3)',
               padding: '1px 6px',
               borderRadius: 10,
             }}
@@ -143,3 +143,5 @@ export const Header: React.FC<HeaderProps> = ({
     </header>
   );
 };
+
+export const Header = React.memo(HeaderComponent);

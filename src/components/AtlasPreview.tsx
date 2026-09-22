@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { AppMode } from '../core/types';
-import { RefreshCw, Download, FileText, Film, Maximize2 } from 'lucide-react';
+import { RefreshCw, Download, FileText, Film, Maximize2, Folder, Code2 } from 'lucide-react';
 import { AtlasModal } from './AtlasModal';
+import { CodeExportModal } from './CodeExportModal';
 
 interface AtlasPreviewProps {
   mode: AppMode;
@@ -12,14 +13,24 @@ interface AtlasPreviewProps {
   onExport: () => void;
   isExporting: boolean;
   hasMedia: boolean;
-  // Normal Map & GIF
+  // Normal Map, Mask & GIF
   generateNormalMap?: boolean;
   setGenerateNormalMap?: (val: boolean) => void;
+  generatePbrPack?: boolean;
+  setGeneratePbrPack?: (val: boolean) => void;
+  enablePng8?: boolean;
+  setEnablePng8?: (val: boolean) => void;
+  generateMask?: boolean;
+  setGenerateMask?: (val: boolean) => void;
   onExportGif?: () => void;
   isExportingGif?: boolean;
   // Master Atlas
   exportScope?: 'single' | 'master';
   masterTracksCount?: number;
+  // Direct Folder Export
+  destinationDir?: string;
+  onSelectDestinationDir?: () => void;
+  layoutMode?: 'grid' | 'advanced';
 }
 
 const AtlasPreviewComponent: React.FC<AtlasPreviewProps> = ({
@@ -33,13 +44,23 @@ const AtlasPreviewComponent: React.FC<AtlasPreviewProps> = ({
   hasMedia,
   generateNormalMap = false,
   setGenerateNormalMap,
+  generatePbrPack = false,
+  setGeneratePbrPack,
+  enablePng8 = false,
+  setEnablePng8,
+  generateMask = false,
+  setGenerateMask,
   onExportGif,
   isExportingGif = false,
   exportScope = 'single',
   masterTracksCount = 1,
+  destinationDir,
+  onSelectDestinationDir,
+  layoutMode = 'grid',
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  const [isCodeModalOpen, setIsCodeModalOpen] = useState(false);
 
   const atlasDataUrl = React.useMemo(() => {
     return atlasCanvas ? atlasCanvas.toDataURL() : '';
@@ -120,12 +141,12 @@ const AtlasPreviewComponent: React.FC<AtlasPreviewProps> = ({
                     gap: 6,
                     padding: '6px 14px',
                     borderRadius: 6,
-                    background: '#0d241a',
-                    border: '1px solid var(--accent-green)',
-                    color: 'var(--accent-green)',
+                    background: '#2B2D37',
+                    border: '1px solid #FF551F',
+                    color: '#FF551F',
                     fontSize: 12,
                     fontWeight: 700,
-                    boxShadow: '0 4px 14px rgba(0,0,0,0.6), 0 0 10px rgba(0, 255, 157, 0.3)',
+                    boxShadow: 'none',
                     cursor: 'pointer',
                     transform: isHovered ? 'scale(1)' : 'scale(0.95)',
                     transition: 'transform 0.15s ease-out',
@@ -190,7 +211,7 @@ const AtlasPreviewComponent: React.FC<AtlasPreviewProps> = ({
             gap: 6,
           }}
         >
-          <FileText size={13} color="var(--accent-green)" />
+          <FileText size={13} color="#FF551F" />
           <input
             type="text"
             value={exportFilename}
@@ -210,6 +231,60 @@ const AtlasPreviewComponent: React.FC<AtlasPreviewProps> = ({
         </div>
       </div>
 
+      {/* Destination Folder Selector (sleek row with Browse... button) */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div
+          style={{
+            flex: 1,
+            height: 34,
+            display: 'flex',
+            alignItems: 'center',
+            background: 'var(--bg-input)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 6,
+            padding: '0 8px',
+            gap: 6,
+            overflow: 'hidden',
+          }}
+          title={destinationDir || 'Default Export Folder'}
+        >
+          <Folder size={14} color="#FF551F" style={{ flexShrink: 0 }} />
+          <span
+            style={{
+              fontSize: 11,
+              color: destinationDir ? 'var(--text-bright)' : 'var(--text-muted)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              fontFamily: 'monospace',
+            }}
+          >
+            {destinationDir || 'Default: Desktop'}
+          </span>
+        </div>
+
+        {onSelectDestinationDir && (
+          <button
+            type="button"
+            onClick={onSelectDestinationDir}
+            style={{
+              height: 34,
+              padding: '0 12px',
+              fontSize: 11,
+              fontWeight: 600,
+              background: '#2B2D37',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: 6,
+              color: 'var(--text-bright)',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Browse...
+          </button>
+        )}
+      </div>
+
       {/* Generate Normal Map Checkbox */}
       {mode === 'atlas' && setGenerateNormalMap && (
         <label
@@ -219,7 +294,7 @@ const AtlasPreviewComponent: React.FC<AtlasPreviewProps> = ({
             gap: 6,
             fontSize: 11,
             fontWeight: 500,
-            color: generateNormalMap ? 'var(--accent-cyan)' : 'var(--text-muted)',
+            color: generateNormalMap ? 'var(--text-bright)' : 'var(--text-muted)',
             cursor: 'pointer',
             padding: '2px 0',
           }}
@@ -228,9 +303,86 @@ const AtlasPreviewComponent: React.FC<AtlasPreviewProps> = ({
             type="checkbox"
             checked={generateNormalMap}
             onChange={(e) => setGenerateNormalMap(e.target.checked)}
-            style={{ accentColor: 'var(--accent-cyan)', cursor: 'pointer' }}
+            style={{ accentColor: 'var(--accent-orange)', cursor: 'pointer' }}
           />
           <span>Generate Normal Map (_normal.png)</span>
+        </label>
+      )}
+
+      {/* Generate 2D PBR Pack Checkbox */}
+      {mode === 'atlas' && setGeneratePbrPack && (
+        <label
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            fontSize: 11,
+            fontWeight: 500,
+            color: generatePbrPack ? '#00e5ff' : 'var(--text-muted)',
+            cursor: 'pointer',
+            padding: '2px 0',
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={generatePbrPack}
+            onChange={(e) => {
+              setGeneratePbrPack(e.target.checked);
+              if (e.target.checked && setGenerateNormalMap) {
+                setGenerateNormalMap(true);
+              }
+            }}
+            style={{ accentColor: '#00e5ff', cursor: 'pointer' }}
+          />
+          <span>💡 2D PBR Pack (Normal + Emission + Roughness)</span>
+        </label>
+      )}
+
+      {/* PNG-8 Compression Checkbox */}
+      {mode === 'atlas' && setEnablePng8 && (
+        <label
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            fontSize: 11,
+            fontWeight: 500,
+            color: enablePng8 ? '#00f084' : 'var(--text-muted)',
+            cursor: 'pointer',
+            padding: '2px 0',
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={enablePng8}
+            onChange={(e) => setEnablePng8(e.target.checked)}
+            style={{ accentColor: '#00f084', cursor: 'pointer' }}
+          />
+          <span>🗜️ PNG-8 NeuQuant Output (60%–80% smaller)</span>
+        </label>
+      )}
+
+      {/* Generate Silhouette Alpha Mask Checkbox */}
+      {mode === 'atlas' && setGenerateMask && (
+        <label
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            fontSize: 11,
+            fontWeight: 500,
+            color: generateMask ? 'var(--text-bright)' : 'var(--text-muted)',
+            cursor: 'pointer',
+            padding: '2px 0',
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={generateMask}
+            onChange={(e) => setGenerateMask(e.target.checked)}
+            style={{ accentColor: 'var(--accent-orange)', cursor: 'pointer' }}
+          />
+          <span>Generate Mask (_mask.png)</span>
         </label>
       )}
 
@@ -239,8 +391,8 @@ const AtlasPreviewComponent: React.FC<AtlasPreviewProps> = ({
         <div
           style={{
             padding: '6px 10px',
-            background: '#241a0d',
-            border: '1px solid #754128',
+            background: 'rgba(255, 92, 38, 0.1)',
+            border: '1px solid rgba(255, 92, 38, 0.3)',
             borderRadius: 6,
             fontSize: 11,
             color: 'var(--accent-orange)',
@@ -254,7 +406,7 @@ const AtlasPreviewComponent: React.FC<AtlasPreviewProps> = ({
         </div>
       )}
 
-      {/* Bottom Glowing Green Convert & Export Button (Taller and bold) */}
+      {/* Convert & Export Button (Clean Matte Orange, No Glow) */}
       <button
         onClick={onExport}
         disabled={!hasMedia || isExporting}
@@ -263,13 +415,14 @@ const AtlasPreviewComponent: React.FC<AtlasPreviewProps> = ({
           width: '100%',
           height: 44,
           fontSize: 13,
-          fontWeight: 700,
+          fontWeight: 600,
           marginTop: 4,
-          borderRadius: 7,
-          letterSpacing: '0.3px',
-          background: exportScope === 'master' ? 'var(--accent-orange)' : undefined,
-          borderColor: exportScope === 'master' ? 'var(--accent-orange)' : undefined,
-          boxShadow: exportScope === 'master' ? '0 0 16px rgba(255, 122, 69, 0.4)' : undefined,
+          borderRadius: 8,
+          letterSpacing: '0.2px',
+          background: 'var(--accent-orange)',
+          borderColor: 'var(--accent-orange)',
+          color: '#ffffff',
+          boxShadow: 'none',
         }}
       >
         {isExporting ? (
@@ -293,29 +446,63 @@ const AtlasPreviewComponent: React.FC<AtlasPreviewProps> = ({
             width: '100%',
             height: 34,
             fontSize: 11,
-            fontWeight: 600,
+            fontWeight: 500,
             borderRadius: 6,
-            background: '#122533',
-            border: '1px solid #1e608a',
-            color: 'var(--accent-cyan)',
+            background: 'var(--bg-input)',
+            border: '1px solid var(--border-subtle)',
+            color: 'var(--text-bright)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             gap: 6,
-            cursor: !hasMedia || isExportingGif ? 'not-allowed' : 'pointer',
-            opacity: !hasMedia ? 0.5 : 1,
-            marginTop: 2,
+            boxShadow: 'none',
           }}
-          title="Export transparent animated GIF for Discord, social media, and web previews"
         >
           {isExportingGif ? (
             <RefreshCw size={13} className="animate-spin" />
           ) : (
             <Film size={13} />
           )}
-          {isExportingGif ? 'Encoding GIF...' : 'Export Animated GIF'}
+          {isExportingGif ? 'Rendering GIF...' : 'Export Animated GIF'}
         </button>
       )}
+
+      {/* Code Snippets Integration Modal Trigger */}
+      {mode === 'atlas' && (
+        <button
+          onClick={() => setIsCodeModalOpen(true)}
+          disabled={!hasMedia}
+          style={{
+            width: '100%',
+            height: 34,
+            fontSize: 11,
+            fontWeight: 600,
+            borderRadius: 6,
+            background: '#2B2D37',
+            border: '1px solid #2D2E37',
+            color: '#FF551F',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
+            cursor: hasMedia ? 'pointer' : 'not-allowed',
+            opacity: hasMedia ? 1 : 0.5,
+            transition: 'all 0.15s ease',
+          }}
+        >
+          <Code2 size={13} color="#FF551F" />
+          <span>Integration Code & Snippets</span>
+        </button>
+      )}
+
+      {/* Code Export Modal */}
+      <CodeExportModal
+        isOpen={isCodeModalOpen}
+        onClose={() => setIsCodeModalOpen(false)}
+        animName={exportFilename || 'anim'}
+        filename={exportFilename || 'spritesheet'}
+        isAdvancedPack={layoutMode === 'advanced'}
+      />
     </div>
   );
 };

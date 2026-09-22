@@ -1,3 +1,5 @@
+import { RootMotionFrame } from './types';
+
 /**
  * TemporalProcessor: AI Video Stabilization & Animation Ground Alignment
  */
@@ -166,5 +168,128 @@ export class TemporalProcessor {
     }
 
     return resultCanvases;
+  }
+
+  /**
+   * Computes foreground alpha-weighted centroid (center of mass) of the character.
+   */
+  public static detectCharacterCentroid(
+    canvas: HTMLCanvasElement,
+    alphaThreshold = 35
+  ): { cx: number; cy: number; mass: number } {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return { cx: canvas.width / 2, cy: canvas.height / 2, mass: 0 };
+
+    const w = canvas.width;
+    const h = canvas.height;
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const data = imgData.data;
+
+    let totalMass = 0;
+    let weightedSumX = 0;
+    let weightedSumY = 0;
+
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const a = data[(y * w + x) * 4 + 3];
+        if (a >= alphaThreshold) {
+          totalMass += a;
+          weightedSumX += x * a;
+          weightedSumY += y * a;
+        }
+      }
+    }
+
+    if (totalMass === 0) {
+      return { cx: w / 2, cy: h / 2, mass: 0 };
+    }
+
+    return {
+      cx: weightedSumX / totalMass,
+      cy: weightedSumY / totalMass,
+      mass: totalMass,
+    };
+  }
+
+  /**
+   * In-Place Centering / Root Motion:
+   * Aligns each frame's centroid so the character runs/walks in-place without screen drift.
+   * Extracts cumulative root motion delta vectors (dx, dy) for game physics engines.
+   */
+  public static applyInPlaceCentering(
+    canvases: HTMLCanvasElement[],
+    lockAxis: 'x' | 'xy' = 'x'
+  ): {
+    alignedCanvases: HTMLCanvasElement[];
+    rootMotion: RootMotionFrame[];
+  } {
+    if (canvases.length <= 1) {
+      return {
+        alignedCanvases: canvases,
+        rootMotion: canvases.map((_, i) => ({ frame: i, dx: 0, dy: 0, totalX: 0, totalY: 0 })),
+      };
+    }
+
+    // 1. Calculate centroid for each frame
+    const centroids = canvases.map((c) => this.detectCharacterCentroid(c));
+
+    // 2. Determine anchor reference (median centroid of sequence to minimize extreme shift)
+    const validCentroids = centroids.filter((c) => c.mass > 0);
+    const anchorX =
+      validCentroids.length > 0
+        ? validCentroids.map((c) => c.cx).sort((a, b) => a - b)[Math.floor(validCentroids.length / 2)]
+        : canvases[0].width / 2;
+    const anchorY =
+      validCentroids.length > 0
+        ? validCentroids.map((c) => c.cy).sort((a, b) => a - b)[Math.floor(validCentroids.length / 2)]
+        : canvases[0].height / 2;
+
+    const alignedCanvases: HTMLCanvasElement[] = [];
+    const rootMotion: RootMotionFrame[] = [];
+    let cumulativeX = 0;
+    let cumulativeY = 0;
+
+    for (let i = 0; i < canvases.length; i++) {
+      const src = canvases[i];
+      const cent = centroids[i];
+
+      // If frame has no content, do not shift
+      if (cent.mass === 0) {
+        alignedCanvases.push(src);
+        rootMotion.push({ frame: i, dx: 0, dy: 0, totalX: cumulativeX, totalY: cumulativeY });
+        continue;
+      }
+
+      // Delta required to bring centroid to anchor
+      const shiftX = Math.round(anchorX - cent.cx);
+      const shiftY = lockAxis === 'xy' ? Math.round(anchorY - cent.cy) : 0;
+
+      // In game root motion: world displacement of the character relative to previous frame
+      const prevCent = i > 0 ? centroids[i - 1] : cent;
+      const frameDisplacementX = Math.round(cent.cx - prevCent.cx);
+      const frameDisplacementY = lockAxis === 'xy' ? Math.round(cent.cy - prevCent.cy) : 0;
+      cumulativeX += frameDisplacementX;
+      cumulativeY += frameDisplacementY;
+
+      rootMotion.push({
+        frame: i,
+        dx: frameDisplacementX,
+        dy: frameDisplacementY,
+        totalX: cumulativeX,
+        totalY: cumulativeY,
+      });
+
+      // Render shifted canvas
+      const aligned = document.createElement('canvas');
+      aligned.width = src.width;
+      aligned.height = src.height;
+      const ctx = aligned.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(src, shiftX, shiftY);
+      }
+      alignedCanvases.push(aligned);
+    }
+
+    return { alignedCanvases, rootMotion };
   }
 }

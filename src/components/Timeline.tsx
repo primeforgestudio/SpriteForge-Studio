@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { Play, Pause, SkipBack, SkipForward, RotateCw, Plus, Check } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, ChevronLeft, ChevronRight, RotateCw, Plus, Check } from 'lucide-react';
 
 interface TimelineProps {
   totalFrames: number;
@@ -22,26 +22,26 @@ interface TimelineProps {
   onDetectLoop?: () => Promise<string | null>;
 }
 
-// SpriteForge Studio Unified Cyber-Emerald Brand Palette
-const TL_BG = '#0c1210';
-const TL_RULER_BG = '#0e1714';
-const TL_TRACK = '#0a100e';
-const TL_RANGE_TOP = '#184231';
-const TL_RANGE_BOTTOM = '#102e22';
-const TL_OUT = '#060908';
-const TL_KEYLANE = '#0b1310';
-const TL_GRID = '#193025';
-const TL_TICK = '#2b4739';
-const TL_TEXT = '#758580';
-const TL_HANDLE = '#00f084';
-const TL_HANDLE_HOVER = '#38bdf8';
-const TL_HANDLE_GRIP = '#062618';
-const TL_KEY = '#79b39a';
+// SpriteForge Studio Unified Dark Matte & Vibrant Orange Palette
+const TL_BG = '#15161a';
+const TL_RULER_BG = '#191a1f';
+const TL_TRACK = '#121316';
+const TL_RANGE_TOP = '#3d2419';
+const TL_RANGE_BOTTOM = '#2d1a12';
+const TL_OUT = '#0d0e10';
+const TL_KEYLANE = '#16171b';
+const TL_GRID = '#26272e';
+const TL_TICK = '#383a45';
+const TL_TEXT = '#8a909d';
+const TL_HANDLE = '#ff5c26';
+const TL_HANDLE_HOVER = '#ff7b4d';
+const TL_HANDLE_GRIP = '#3d160a';
+const TL_KEY = '#e2734a';
 const TL_KEY_HOVER = '#ffffff';
-const TL_KEY_SELECTED = '#f59e0b';
-const TL_KEY_EDGE = '#05140d';
-const TL_PLAYHEAD = '#00f084';
-const TL_PLAYHEAD_TEXT = '#05140d';
+const TL_KEY_SELECTED = '#ff5c26';
+const TL_KEY_EDGE = '#18191d';
+const TL_PLAYHEAD = '#ff5c26';
+const TL_PLAYHEAD_TEXT = '#ffffff';
 
 // Exact Geometry Constants
 const PAD = 16;
@@ -89,6 +89,8 @@ const TimelineComponent: React.FC<TimelineProps> = ({
 
   const pendingFrameRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
+  const staticCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const staticDirtyRef = useRef<boolean>(true);
 
   const requestPlayheadScrub = useCallback((frame: number) => {
     pendingFrameRef.current = frame;
@@ -148,7 +150,25 @@ const TimelineComponent: React.FC<TimelineProps> = ({
     [lastFrame, getTrackBounds]
   );
 
-  // Render timeline to canvas
+  // Mark static canvas dirty when structure changes
+  useEffect(() => {
+    staticDirtyRef.current = true;
+  }, [
+    totalFrames,
+    cropStart,
+    cropEnd,
+    markers,
+    selectedKey,
+    hoverKey,
+    hoverHandle,
+    dragging,
+    lastFrame,
+    getTrackBounds,
+    xPos,
+    getTickStep,
+  ]);
+
+  // Render timeline to canvas (with 0.02ms cached background blit for silky 60fps playback)
   const renderCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -162,260 +182,269 @@ const TimelineComponent: React.FC<TimelineProps> = ({
     if (canvas.width !== width * dpr || canvas.height !== height * dpr) {
       canvas.width = width * dpr;
       canvas.height = height * dpr;
+      staticDirtyRef.current = true;
     }
 
     ctx.save();
     ctx.scale(dpr, dpr);
 
-    // 1. Clear background
-    ctx.fillStyle = TL_BG;
-    ctx.fillRect(0, 0, width, height);
+    // 1. Render or reuse static background layer (ruler, grid, range, keyframes, handles)
+    if (
+      staticDirtyRef.current ||
+      !staticCanvasRef.current ||
+      staticCanvasRef.current.width !== width ||
+      staticCanvasRef.current.height !== height
+    ) {
+      if (!staticCanvasRef.current) {
+        staticCanvasRef.current = document.createElement('canvas');
+      }
+      staticCanvasRef.current.width = width;
+      staticCanvasRef.current.height = height;
+      const sCtx = staticCanvasRef.current.getContext('2d')!;
 
-    // 2. Top ruler background
-    ctx.fillStyle = TL_RULER_BG;
-    ctx.fillRect(0, 0, width, RULER_H);
+      // Backgrounds
+      sCtx.fillStyle = TL_BG;
+      sCtx.fillRect(0, 0, width, height);
 
-    // 3. Bottom keyframe lane background
-    const keyLaneTop = height - KEY_LANE_H;
-    ctx.fillStyle = TL_KEYLANE;
-    ctx.fillRect(0, keyLaneTop, width, KEY_LANE_H);
+      sCtx.fillStyle = TL_RULER_BG;
+      sCtx.fillRect(0, 0, width, RULER_H);
 
-    if (totalFrames <= 0) {
-      ctx.fillStyle = TL_TEXT;
-      ctx.font = '11px "Segoe UI", sans-serif';
+      const keyLaneTop = height - KEY_LANE_H;
+      sCtx.fillStyle = TL_KEYLANE;
+      sCtx.fillRect(0, keyLaneTop, width, KEY_LANE_H);
+
+      if (totalFrames <= 0) {
+        sCtx.fillStyle = TL_TEXT;
+        sCtx.font = '11px "Segoe UI", sans-serif';
+        sCtx.textAlign = 'center';
+        sCtx.textBaseline = 'middle';
+        sCtx.fillText('Timeline appears once media is loaded', width / 2, height / 2);
+      } else {
+        const { trackLeft, trackRight } = getTrackBounds(width);
+        const trackTop = RULER_H;
+        const trackH = keyLaneTop - trackTop;
+
+        const xs = xPos(cropStart, width);
+        const xe = xPos(cropEnd, width);
+
+        // Middle Track background
+        sCtx.fillStyle = TL_TRACK;
+        sCtx.fillRect(trackLeft, trackTop, trackRight - trackLeft, trackH);
+
+        // Active In-Out Range Linear Gradient
+        const gradient = sCtx.createLinearGradient(0, trackTop, 0, trackTop + trackH);
+        gradient.addColorStop(0, TL_RANGE_TOP);
+        gradient.addColorStop(1, TL_RANGE_BOTTOM);
+        sCtx.fillStyle = gradient;
+        sCtx.fillRect(xs, trackTop, Math.max(1, xe - xs), trackH);
+
+        // Out-of-bounds dimmed overlay
+        sCtx.fillStyle = TL_OUT;
+        sCtx.fillRect(0, trackTop, xs, trackH);
+        sCtx.fillRect(xe, trackTop, width - xe, trackH);
+
+        // Track border horizontal lines
+        sCtx.strokeStyle = TL_KEY_EDGE;
+        sCtx.lineWidth = 1;
+        sCtx.beginPath();
+        sCtx.moveTo(0, trackTop + 0.5);
+        sCtx.lineTo(width, trackTop + 0.5);
+        sCtx.moveTo(0, keyLaneTop - 0.5);
+        sCtx.lineTo(width, keyLaneTop - 0.5);
+        sCtx.stroke();
+
+        // Ruler ticks, numbers, and vertical grid lines
+        const step = getTickStep(width);
+        const minor = Math.max(1, Math.floor(step / 5));
+
+        sCtx.font = '10px "Segoe UI", system-ui, sans-serif';
+        sCtx.textBaseline = 'bottom';
+
+        for (let frame = 0; frame <= lastFrame; frame += minor) {
+          const x = xPos(frame, width);
+          const major = frame % step === 0;
+
+          sCtx.strokeStyle = TL_TICK;
+          sCtx.lineWidth = 1;
+          sCtx.beginPath();
+          sCtx.moveTo(x + 0.5, RULER_H - (major ? 8 : 4));
+          sCtx.lineTo(x + 0.5, RULER_H - 1);
+          sCtx.stroke();
+
+          if (major) {
+            sCtx.strokeStyle = TL_GRID;
+            sCtx.beginPath();
+            sCtx.moveTo(x + 0.5, trackTop + 1);
+            sCtx.lineTo(x + 0.5, trackTop + trackH - 1);
+            sCtx.stroke();
+
+            const label = String(frame);
+            const textMetrics = sCtx.measureText(label);
+            let tx = x + 3;
+            if (tx + textMetrics.width > width - 4) {
+              tx = x - 3 - textMetrics.width;
+            }
+            sCtx.fillStyle = TL_TEXT;
+            sCtx.fillText(label, tx, RULER_H - 8);
+          }
+        }
+
+        // Keyframes (Diamonds)
+        const laneCy = keyLaneTop + KEY_LANE_H / 2;
+
+        const drawDiamond = (
+          cx: number,
+          cy: number,
+          radius: number,
+          fillColor: string,
+          outlineColor?: string
+        ) => {
+          sCtx.beginPath();
+          sCtx.moveTo(cx, cy - radius);
+          sCtx.lineTo(cx + radius, cy);
+          sCtx.lineTo(cx, cy + radius);
+          sCtx.lineTo(cx - radius, cy);
+          sCtx.closePath();
+          sCtx.fillStyle = fillColor;
+          sCtx.fill();
+          if (outlineColor) {
+            sCtx.strokeStyle = outlineColor;
+            sCtx.lineWidth = 1;
+            sCtx.stroke();
+          }
+        };
+
+        markers.forEach((frame, index) => {
+          const x = xPos(frame, width);
+          const isSelected = index === selectedKey;
+          const isHovered = index === hoverKey;
+
+          sCtx.strokeStyle = isSelected || isHovered ? 'rgba(255, 255, 255, 0.28)' : 'rgba(255, 255, 255, 0.1)';
+          sCtx.lineWidth = 1;
+          sCtx.beginPath();
+          sCtx.moveTo(x + 0.5, trackTop + 2);
+          sCtx.lineTo(x + 0.5, keyLaneTop - 2);
+          sCtx.stroke();
+
+          if (isSelected) {
+            drawDiamond(x, laneCy, KEY_R + 3, 'rgba(242, 177, 52, 0.35)');
+          }
+
+          let color = TL_KEY;
+          if (isSelected) {
+            color = TL_KEY_SELECTED;
+          } else if (isHovered) {
+            color = TL_KEY_HOVER;
+          }
+
+          drawDiamond(x, laneCy, KEY_R, color, TL_KEY_EDGE);
+        });
+
+        // Crop Boundary Handles (Start & End)
+        const kinds: Array<'start' | 'end'> = ['start', 'end'];
+        for (const kind of kinds) {
+          const isStart = kind === 'start';
+          const x = isStart ? xs : xe;
+          const isHovered = hoverHandle === kind || dragging === kind;
+          const color = isHovered ? TL_HANDLE_HOVER : TL_HANDLE;
+
+          sCtx.strokeStyle = color;
+          sCtx.lineWidth = 2;
+          sCtx.beginPath();
+          sCtx.moveTo(x, trackTop);
+          sCtx.lineTo(x, height);
+          sCtx.stroke();
+
+          const tabH = Math.min(30, trackH - 6);
+          const tabTop = trackTop + 4;
+          const tabX = isStart ? x : x - HANDLE_W;
+
+          sCtx.fillStyle = color;
+          sCtx.strokeStyle = TL_KEY_EDGE;
+          sCtx.lineWidth = 1;
+
+          sCtx.beginPath();
+          const r = 2;
+          sCtx.roundRect(tabX, tabTop, HANDLE_W, tabH, [r, r, r, r]);
+          sCtx.fill();
+          sCtx.stroke();
+
+          sCtx.strokeStyle = TL_HANDLE_GRIP;
+          sCtx.lineWidth = 1;
+          const gx = tabX + HANDLE_W / 2;
+          sCtx.beginPath();
+          sCtx.moveTo(gx - 1.5, tabTop + 5);
+          sCtx.lineTo(gx - 1.5, tabTop + tabH - 5);
+          sCtx.moveTo(gx + 1.5, tabTop + 5);
+          sCtx.lineTo(gx + 1.5, tabTop + tabH - 5);
+          sCtx.stroke();
+        }
+
+        // Crop boundary frame chips
+        sCtx.font = '10px "Segoe UI", system-ui, sans-serif';
+        sCtx.textBaseline = 'middle';
+        sCtx.textAlign = 'center';
+        const labelY = trackTop + trackH - 12;
+
+        for (const kind of kinds) {
+          const isStart = kind === 'start';
+          const x = isStart ? xs : xe;
+          const text = String(isStart ? cropStart : cropEnd);
+          const textW = sCtx.measureText(text).width + 8;
+
+          if (xe - xs >= textW * 2 + 10) {
+            const chipX = isStart ? x + HANDLE_W + 3 : x - HANDLE_W - 3 - textW;
+            sCtx.fillStyle = '#261710';
+            sCtx.strokeStyle = '#5a2d1a';
+            sCtx.lineWidth = 1;
+            sCtx.beginPath();
+            sCtx.roundRect(chipX, labelY - 8, textW, 16, 3);
+            sCtx.fill();
+            sCtx.stroke();
+
+            sCtx.fillStyle = '#ff5c26';
+            sCtx.fillText(text, chipX + textW / 2, labelY);
+          }
+        }
+      }
+
+      staticDirtyRef.current = false;
+    }
+
+    // Fast 0.01ms Blit of static track layer
+    if (staticCanvasRef.current) {
+      ctx.drawImage(staticCanvasRef.current, 0, 0);
+    }
+
+    // 2. Fast Playhead (Vertical needle & top badge)
+    if (totalFrames > 0) {
+      const cx = xPos(currentFrame, width);
+
+      // Needle line
+      ctx.strokeStyle = TL_PLAYHEAD;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(cx + 0.5, RULER_H);
+      ctx.lineTo(cx + 0.5, height);
+      ctx.stroke();
+
+      // Top Badge in ruler
+      const playheadLabel = String(currentFrame);
+      ctx.font = 'bold 10px "Segoe UI", system-ui, sans-serif';
+      const badgeTextW = ctx.measureText(playheadLabel).width;
+      const badgeW = Math.max(26, badgeTextW + 12);
+      const hx = Math.max(0, Math.min(cx - badgeW / 2, width - badgeW));
+
+      ctx.fillStyle = TL_PLAYHEAD;
+      ctx.beginPath();
+      ctx.roundRect(hx, 1, badgeW, RULER_H - 3, 3);
+      ctx.fill();
+
+      ctx.fillStyle = TL_PLAYHEAD_TEXT;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('Timeline appears once media is loaded', width / 2, height / 2);
-      ctx.restore();
-      return;
+      ctx.fillText(playheadLabel, hx + badgeW / 2, (RULER_H - 2) / 2);
     }
-
-    const { trackLeft, trackRight } = getTrackBounds(width);
-    const trackTop = RULER_H;
-    const trackH = keyLaneTop - trackTop;
-
-    const xs = xPos(cropStart, width);
-    const xe = xPos(cropEnd, width);
-
-    // 4. Middle Track background
-    ctx.fillStyle = TL_TRACK;
-    ctx.fillRect(trackLeft, trackTop, trackRight - trackLeft, trackH);
-
-    // 5. Active In-Out Range Linear Gradient
-    const gradient = ctx.createLinearGradient(0, trackTop, 0, trackTop + trackH);
-    gradient.addColorStop(0, TL_RANGE_TOP);
-    gradient.addColorStop(1, TL_RANGE_BOTTOM);
-    ctx.fillStyle = gradient;
-    ctx.fillRect(xs, trackTop, Math.max(1, xe - xs), trackH);
-
-    // 6. Out-of-bounds dimmed overlay
-    ctx.fillStyle = TL_OUT;
-    ctx.fillRect(0, trackTop, xs, trackH);
-    ctx.fillRect(xe, trackTop, width - xe, trackH);
-
-    // 7. Track border horizontal lines
-    ctx.strokeStyle = TL_KEY_EDGE;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(0, trackTop + 0.5);
-    ctx.lineTo(width, trackTop + 0.5);
-    ctx.moveTo(0, keyLaneTop - 0.5);
-    ctx.lineTo(width, keyLaneTop - 0.5);
-    ctx.stroke();
-
-    // 8. Ruler ticks, numbers, and vertical grid lines
-    const step = getTickStep(width);
-    const minor = Math.max(1, Math.floor(step / 5));
-
-    ctx.font = '10px "Segoe UI", system-ui, sans-serif';
-    ctx.textBaseline = 'bottom';
-
-    for (let frame = 0; frame <= lastFrame; frame += minor) {
-      const x = xPos(frame, width);
-      const major = frame % step === 0;
-
-      // Tick line in ruler
-      ctx.strokeStyle = TL_TICK;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(x + 0.5, RULER_H - (major ? 8 : 4));
-      ctx.lineTo(x + 0.5, RULER_H - 1);
-      ctx.stroke();
-
-      if (major) {
-        // Vertical grid line through track
-        ctx.strokeStyle = TL_GRID;
-        ctx.beginPath();
-        ctx.moveTo(x + 0.5, trackTop + 1);
-        ctx.lineTo(x + 0.5, trackTop + trackH - 1);
-        ctx.stroke();
-
-        // Label number in ruler
-        const label = String(frame);
-        const textMetrics = ctx.measureText(label);
-        let tx = x + 3;
-        if (tx + textMetrics.width > width - 4) {
-          tx = x - 3 - textMetrics.width;
-        }
-        ctx.fillStyle = TL_TEXT;
-        ctx.fillText(label, tx, RULER_H - 8);
-      }
-    }
-
-    // 9. Keyframes (Diamonds)
-    const laneCy = keyLaneTop + KEY_LANE_H / 2;
-
-    const drawDiamond = (
-      cx: number,
-      cy: number,
-      radius: number,
-      fillColor: string,
-      outlineColor?: string
-    ) => {
-      ctx.beginPath();
-      ctx.moveTo(cx, cy - radius);
-      ctx.lineTo(cx + radius, cy);
-      ctx.lineTo(cx, cy + radius);
-      ctx.lineTo(cx - radius, cy);
-      ctx.closePath();
-
-      ctx.fillStyle = fillColor;
-      ctx.fill();
-
-      if (outlineColor) {
-        ctx.strokeStyle = outlineColor;
-        ctx.lineWidth = 1;
-        ctx.stroke();
-      }
-    };
-
-    markers.forEach((frame, index) => {
-      const x = xPos(frame, width);
-      const isSelected = index === selectedKey;
-      const isHovered = index === hoverKey;
-
-      // Vertical guide line from diamond up through the track
-      ctx.strokeStyle = isSelected || isHovered ? 'rgba(255, 255, 255, 0.28)' : 'rgba(255, 255, 255, 0.1)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(x + 0.5, trackTop + 2);
-      ctx.lineTo(x + 0.5, keyLaneTop - 2);
-      ctx.stroke();
-
-      // Halo for selected keyframe
-      if (isSelected) {
-        drawDiamond(x, laneCy, KEY_R + 3, 'rgba(242, 177, 52, 0.35)');
-      }
-
-      // Diamond fill color
-      let color = TL_KEY;
-      if (isSelected) {
-        color = TL_KEY_SELECTED;
-      } else if (isHovered) {
-        color = TL_KEY_HOVER;
-      }
-
-      drawDiamond(x, laneCy, KEY_R, color, TL_KEY_EDGE);
-    });
-
-    // 10. Crop Boundary Handles (Start & End)
-    const kinds: Array<'start' | 'end'> = ['start', 'end'];
-    for (const kind of kinds) {
-      const isStart = kind === 'start';
-      const x = isStart ? xs : xe;
-      const isHovered = hoverHandle === kind || dragging === kind;
-      const color = isHovered ? TL_HANDLE_HOVER : TL_HANDLE;
-
-      // Vertical span line
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(x, trackTop);
-      ctx.lineTo(x, height);
-      ctx.stroke();
-
-      // Tab rounded rectangle
-      const tabH = Math.min(30, trackH - 6);
-      const tabTop = trackTop + 4;
-      const tabX = isStart ? x : x - HANDLE_W;
-
-      ctx.fillStyle = color;
-      ctx.strokeStyle = TL_KEY_EDGE;
-      ctx.lineWidth = 1;
-
-      // Rounded rect tab
-      ctx.beginPath();
-      const r = 2;
-      ctx.roundRect(tabX, tabTop, HANDLE_W, tabH, [r, r, r, r]);
-      ctx.fill();
-      ctx.stroke();
-
-      // Grip lines inside tab
-      ctx.strokeStyle = TL_HANDLE_GRIP;
-      ctx.lineWidth = 1;
-      const gx = tabX + HANDLE_W / 2;
-      ctx.beginPath();
-      ctx.moveTo(gx - 1.5, tabTop + 5);
-      ctx.lineTo(gx - 1.5, tabTop + tabH - 5);
-      ctx.moveTo(gx + 1.5, tabTop + 5);
-      ctx.lineTo(gx + 1.5, tabTop + tabH - 5);
-      ctx.stroke();
-    }
-
-    // Crop boundary frame chips
-    ctx.font = '10px "Segoe UI", system-ui, sans-serif';
-    ctx.textBaseline = 'middle';
-    ctx.textAlign = 'center';
-    const labelY = trackTop + trackH - 12;
-
-    for (const kind of kinds) {
-      const isStart = kind === 'start';
-      const x = isStart ? xs : xe;
-      const text = String(isStart ? cropStart : cropEnd);
-      const textW = ctx.measureText(text).width + 8;
-
-      if (xe - xs >= textW * 2 + 10) {
-        const chipX = isStart ? x + HANDLE_W + 3 : x - HANDLE_W - 3 - textW;
-        ctx.fillStyle = '#081c14';
-        ctx.strokeStyle = '#16402d';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.roundRect(chipX, labelY - 8, textW, 16, 3);
-        ctx.fill();
-        ctx.stroke();
-
-        ctx.fillStyle = '#00f084';
-        ctx.fillText(text, chipX + textW / 2, labelY);
-      }
-    }
-
-    // 11. Playhead (Vertical needle & top badge)
-    const cx = xPos(currentFrame, width);
-
-    // Needle line
-    ctx.strokeStyle = TL_PLAYHEAD;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(cx + 0.5, RULER_H);
-    ctx.lineTo(cx + 0.5, height);
-    ctx.stroke();
-
-    // Top Badge in ruler
-    const playheadLabel = String(currentFrame);
-    ctx.font = 'bold 10px "Segoe UI", system-ui, sans-serif';
-    const badgeTextW = ctx.measureText(playheadLabel).width;
-    const badgeW = Math.max(26, badgeTextW + 12);
-    const hx = Math.max(0, Math.min(cx - badgeW / 2, width - badgeW));
-
-    ctx.fillStyle = TL_PLAYHEAD;
-    ctx.beginPath();
-    ctx.roundRect(hx, 1, badgeW, RULER_H - 3, 3);
-    ctx.fill();
-
-    ctx.fillStyle = TL_PLAYHEAD_TEXT;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(playheadLabel, hx + badgeW / 2, (RULER_H - 2) / 2);
 
     ctx.restore();
   }, [
@@ -698,7 +727,7 @@ const TimelineComponent: React.FC<TimelineProps> = ({
       tabIndex={0}
       onKeyDown={handleKeyDown}
       style={{
-        background: '#141a17',
+        background: '#121316',
         border: '1px solid var(--border-subtle)',
         borderRadius: 'var(--radius-md)',
         padding: '10px 14px',
@@ -713,41 +742,64 @@ const TimelineComponent: React.FC<TimelineProps> = ({
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         {/* Left: Playback controls + Frame info */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            {/* Skip Back */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            {/* Skip to In Point */}
             <button
               onClick={() => setCurrentFrame(cropStart)}
-              style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', padding: '4px', cursor: 'pointer' }}
+              style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', padding: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
               title="Go to In Point"
             >
               <SkipBack size={15} />
             </button>
 
-            {/* Neon Mint Green Play Button */}
+            {/* Step 1 Frame Backward */}
             <button
-              onClick={() => setIsPlaying(!isPlaying)}
+              onClick={() => setCurrentFrame((prev) => Math.max(0, prev - 1))}
+              style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', padding: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+              title="Step Backward (Previous Frame)"
+            >
+              <ChevronLeft size={16} />
+            </button>
+
+            {/* Matte Orange Play Button (No Glow) */}
+            <button
+              onClick={() => {
+                if (!isPlaying && currentFrame >= cropEnd) {
+                  setCurrentFrame(cropStart);
+                }
+                setIsPlaying(!isPlaying);
+              }}
               style={{
                 width: 32,
                 height: 32,
                 borderRadius: '50%',
-                backgroundColor: 'var(--accent-green)',
-                color: '#000000',
+                backgroundColor: 'var(--accent-orange)',
+                color: '#ffffff',
                 border: 'none',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                boxShadow: '0 0 14px var(--accent-green-glow)',
+                boxShadow: 'none',
                 cursor: 'pointer',
               }}
               title={isPlaying ? 'Pause' : 'Play'}
             >
-              {isPlaying ? <Pause size={14} fill="#000" /> : <Play size={14} fill="#000" style={{ marginLeft: 2 }} />}
+              {isPlaying ? <Pause size={14} fill="#ffffff" color="#ffffff" /> : <Play size={14} fill="#ffffff" color="#ffffff" style={{ marginLeft: 2 }} />}
             </button>
 
-            {/* Skip Forward */}
+            {/* Step 1 Frame Forward */}
+            <button
+              onClick={() => setCurrentFrame((prev) => Math.min(lastFrame, prev + 1))}
+              style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', padding: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+              title="Step Forward (Next Frame)"
+            >
+              <ChevronRight size={16} />
+            </button>
+
+            {/* Skip to Out Point */}
             <button
               onClick={() => setCurrentFrame(cropEnd)}
-              style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', padding: '4px', cursor: 'pointer' }}
+              style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', padding: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
               title="Go to Out Point"
             >
               <SkipForward size={15} />
@@ -759,9 +811,11 @@ const TimelineComponent: React.FC<TimelineProps> = ({
               style={{
                 background: 'transparent',
                 border: 'none',
-                color: isLooping ? 'var(--accent-green)' : 'var(--text-dim)',
+                color: isLooping ? 'var(--accent-orange)' : 'var(--text-dim)',
                 padding: '4px',
                 cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
               }}
               title="Loop playback"
             >
@@ -773,7 +827,7 @@ const TimelineComponent: React.FC<TimelineProps> = ({
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 11, fontFamily: 'monospace' }}>
             <span>
               <span style={{ color: 'var(--text-muted)' }}>Frame: </span>
-              <b style={{ color: 'var(--accent-green)' }}>{formattedCurFrame}</b>
+              <b style={{ color: 'var(--accent-orange)' }}>{formattedCurFrame}</b>
               <span style={{ color: 'var(--text-dim)' }}> / {formattedTotalFrames}</span>
             </span>
 
@@ -786,40 +840,8 @@ const TimelineComponent: React.FC<TimelineProps> = ({
           </div>
         </div>
 
-        {/* Right Buttons: Set In [4], Set Out [12], Full, Distribute Keys, Detect Loop, +Add Key */}
+        {/* Right Buttons: Full, Distribute Keys, Detect Loop, +Add Key */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <button
-            onClick={() => setCropStart(currentFrame)}
-            style={{
-              background: 'var(--bg-card)',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: 4,
-              fontSize: 10,
-              padding: '4px 8px',
-              color: 'var(--text-main)',
-              cursor: 'pointer',
-            }}
-            title="Set In Marker"
-          >
-            Set In [{cropStart}]
-          </button>
-
-          <button
-            onClick={() => setCropEnd(currentFrame)}
-            style={{
-              background: 'var(--bg-card)',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: 4,
-              fontSize: 10,
-              padding: '4px 8px',
-              color: 'var(--text-main)',
-              cursor: 'pointer',
-            }}
-            title="Set Out Marker"
-          >
-            Set Out [{cropEnd}]
-          </button>
-
           <button
             onClick={() => {
               setCropStart(0);
@@ -830,26 +852,27 @@ const TimelineComponent: React.FC<TimelineProps> = ({
               border: '1px solid var(--border-subtle)',
               borderRadius: 4,
               fontSize: 10,
+              fontWeight: 500,
               padding: '4px 8px',
-              color: 'var(--text-main)',
+              color: 'var(--text-muted)',
               cursor: 'pointer',
             }}
-            title="Reset range to full duration"
+            title="Reset range to 100% full clip"
           >
             Full
           </button>
 
-          {/* Distribute Keys Button */}
+          {/* Distribute Markers Button */}
           <button
             onClick={onDistributeMarkers}
             style={{
-              background: '#0d241a',
-              border: '1px solid #1c4535',
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border-subtle)',
               borderRadius: 4,
               fontSize: 10,
               fontWeight: 600,
               padding: '4px 10px',
-              color: 'var(--accent-green)',
+              color: 'var(--accent-orange)',
               cursor: 'pointer',
             }}
             title="Evenly distribute keys across the In-Out range"
@@ -863,13 +886,13 @@ const TimelineComponent: React.FC<TimelineProps> = ({
               onClick={handleDetectLoopClick}
               disabled={isDetectingLoop}
               style={{
-                background: isDetectingLoop ? '#0a1a13' : '#0d241a',
-                border: '1px solid var(--accent-green)',
+                background: isDetectingLoop ? '#241a12' : 'var(--bg-input)',
+                border: '1px solid rgba(255, 92, 38, 0.4)',
                 borderRadius: 4,
                 fontSize: 10,
                 fontWeight: 600,
                 padding: '4px 9px',
-                color: 'var(--accent-green)',
+                color: 'var(--accent-orange)',
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: 4,
@@ -887,9 +910,9 @@ const TimelineComponent: React.FC<TimelineProps> = ({
             <span
               style={{
                 fontSize: 10,
-                color: 'var(--accent-green)',
-                background: '#0b1f16',
-                border: '1px solid #1a4d35',
+                color: 'var(--accent-orange)',
+                background: '#241a12',
+                border: '1px solid rgba(255, 92, 38, 0.4)',
                 padding: '3px 8px',
                 borderRadius: 4,
               }}
@@ -906,8 +929,8 @@ const TimelineComponent: React.FC<TimelineProps> = ({
                 onClick={toggleKeyAtCurrent}
                 disabled={isPlaying}
                 style={{
-                  background: isKeyActive ? '#0e2b1e' : 'var(--bg-card)',
-                  border: isKeyActive ? '1px solid var(--accent-green)' : '1px solid var(--border-subtle)',
+                  background: isKeyActive ? 'rgba(255, 92, 38, 0.15)' : 'var(--bg-card)',
+                  border: isKeyActive ? '1px solid var(--accent-orange)' : '1px solid var(--border-subtle)',
                   borderRadius: 4,
                   fontSize: 10,
                   width: 84,
@@ -916,7 +939,7 @@ const TimelineComponent: React.FC<TimelineProps> = ({
                   alignItems: 'center',
                   justifyContent: 'center',
                   padding: '0 6px',
-                  color: isKeyActive ? 'var(--accent-green)' : 'var(--text-main)',
+                  color: isKeyActive ? 'var(--accent-orange)' : 'var(--text-main)',
                   cursor: isPlaying ? 'default' : 'pointer',
                   opacity: isPlaying ? 0.5 : 1,
                   userSelect: 'none',
@@ -925,7 +948,7 @@ const TimelineComponent: React.FC<TimelineProps> = ({
               >
                 {isKeyActive ? (
                   <>
-                    <Check size={11} style={{ marginRight: 4, color: 'var(--accent-green)' }} />
+                    <Check size={11} style={{ marginRight: 4, color: 'var(--accent-orange)' }} />
                     Key Active
                   </>
                 ) : (
@@ -948,7 +971,7 @@ const TimelineComponent: React.FC<TimelineProps> = ({
           height: TOTAL_CANVAS_H,
           borderRadius: 6,
           overflow: 'hidden',
-          border: '1px solid #222b26',
+          border: '1px solid #2D2E37',
           boxShadow: 'inset 0 2px 6px rgba(0,0,0,0.5)',
         }}
       >

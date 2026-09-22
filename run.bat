@@ -3,7 +3,7 @@ title SpriteForge Studio
 cd /d "%~dp0"
 
 if not exist "dist\index.html" (
-    echo Building SpriteForge Studio...
+    echo Building SpriteForge Studio frontend...
     call npm.cmd run build
 )
 

@@ -45,6 +45,8 @@ interface LeftSidebarProps {
   onChangeKeying: (settings: ChromaKeySettings) => void;
   isEyedropperActive: boolean;
   setIsEyedropperActive: (active: boolean) => void;
+  eyedropperTarget?: 'primary' | 'secondary';
+  setEyedropperTarget?: (target: 'primary' | 'secondary') => void;
   onAutoDetectKey: () => Promise<void>;
   // AI Cleanup Props
   atlasSettings: AtlasSettings;
@@ -69,6 +71,8 @@ const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
   onChangeKeying,
   isEyedropperActive,
   setIsEyedropperActive,
+  eyedropperTarget,
+  setEyedropperTarget,
   onAutoDetectKey,
   atlasSettings,
   onChangeAtlasSettings,
@@ -82,7 +86,7 @@ const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
   return (
     <aside className="left-sidebar" style={width ? { width } : undefined}>
       {/* 1. Workflow Mode Switcher */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 12, background: '#0a0f0d', padding: 3, borderRadius: 8, border: '1px solid var(--border-subtle)' }}>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 12, background: '#121316', padding: 3, borderRadius: 8, border: '1px solid var(--border-subtle)' }}>
         <button
           onClick={() => setMode('atlas')}
           style={{
@@ -90,14 +94,14 @@ const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
             padding: '5px 8px',
             fontSize: 11,
             borderRadius: 6,
-            background: mode === 'atlas' ? '#142a21' : 'transparent',
-            border: mode === 'atlas' ? '1px solid #1e4d36' : '1px solid transparent',
-            color: mode === 'atlas' ? 'var(--accent-green)' : 'var(--text-muted)',
+            background: mode === 'atlas' ? '#2B2D37' : 'transparent',
+            border: mode === 'atlas' ? '1px solid #FF551F' : '1px solid transparent',
+            color: mode === 'atlas' ? '#ffffff' : 'var(--text-muted)',
             fontWeight: mode === 'atlas' ? 700 : 500,
             gap: 5,
           }}
         >
-          <Layers size={13} />
+          <Layers size={13} style={{ color: mode === 'atlas' ? '#FF551F' : 'currentColor' }} />
           <span>Atlas</span>
         </button>
         <button
@@ -107,14 +111,14 @@ const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
             padding: '5px 8px',
             fontSize: 11,
             borderRadius: 6,
-            background: mode === 'sprites' ? '#142a21' : 'transparent',
-            border: mode === 'sprites' ? '1px solid #1e4d36' : '1px solid transparent',
-            color: mode === 'sprites' ? 'var(--accent-green)' : 'var(--text-muted)',
+            background: mode === 'sprites' ? '#2B2D37' : 'transparent',
+            border: mode === 'sprites' ? '1px solid #FF551F' : '1px solid transparent',
+            color: mode === 'sprites' ? '#ffffff' : 'var(--text-muted)',
             fontWeight: mode === 'sprites' ? 700 : 500,
             gap: 5,
           }}
         >
-          <Crop size={13} />
+          <Crop size={13} style={{ color: mode === 'sprites' ? '#FF551F' : 'currentColor' }} />
           <span>Sprites ({spritesCount})</span>
         </button>
       </div>
@@ -146,7 +150,7 @@ const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
           }}
           title="Media Library & Tracks"
         >
-          <Film size={12} style={{ color: activeTab === 'media' ? 'var(--accent-green)' : 'inherit' }} />
+          <Film size={12} style={{ color: activeTab === 'media' ? '#FF551F' : 'inherit' }} />
           <span>Tracks ({tracks.length})</span>
         </button>
 
@@ -167,7 +171,7 @@ const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
           }}
           title="Keylight Chroma Key"
         >
-          <Wand2 size={12} style={{ color: activeTab === 'keylight' ? 'var(--accent-green)' : 'inherit' }} />
+          <Wand2 size={12} style={{ color: activeTab === 'keylight' ? '#FF551F' : 'inherit' }} />
           <span>Keylight</span>
         </button>
 
@@ -188,7 +192,7 @@ const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
           }}
           title="AI Stabilization & Cleanup"
         >
-          <Sparkles size={12} style={{ color: activeTab === 'cleanup' ? 'var(--accent-cyan)' : 'inherit' }} />
+          <Sparkles size={12} style={{ color: activeTab === 'cleanup' ? '#FF551F' : 'inherit' }} />
           <span>AI Clean</span>
         </button>
       </div>
@@ -204,7 +208,7 @@ const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
                 display: 'flex',
                 gap: 4,
                 padding: 3,
-                background: '#0a0f0d',
+                background: '#121316',
                 borderRadius: 6,
                 border: '1px solid var(--border-subtle)',
               }}
@@ -216,9 +220,9 @@ const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
                   padding: '4px 6px',
                   fontSize: 10,
                   borderRadius: 4,
-                  background: exportScope === 'single' ? '#14251e' : 'transparent',
-                  border: exportScope === 'single' ? '1px solid #1e4535' : '1px solid transparent',
-                  color: exportScope === 'single' ? 'var(--accent-green)' : 'var(--text-muted)',
+                  background: exportScope === 'single' ? '#2B2D37' : 'transparent',
+                  border: exportScope === 'single' ? '1px solid #2D2E37' : '1px solid transparent',
+                  color: exportScope === 'single' ? '#ffffff' : 'var(--text-muted)',
                   fontWeight: exportScope === 'single' ? 700 : 500,
                 }}
               >
@@ -231,9 +235,9 @@ const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
                   padding: '4px 6px',
                   fontSize: 10,
                   borderRadius: 4,
-                  background: exportScope === 'master' ? '#1c2419' : 'transparent',
-                  border: exportScope === 'master' ? '1px solid var(--accent-orange)' : '1px solid transparent',
-                  color: exportScope === 'master' ? 'var(--accent-orange)' : 'var(--text-muted)',
+                  background: exportScope === 'master' ? '#2B2D37' : 'transparent',
+                  border: exportScope === 'master' ? '1px solid #FF551F' : '1px solid transparent',
+                  color: exportScope === 'master' ? '#FF551F' : 'var(--text-muted)',
                   fontWeight: exportScope === 'master' ? 700 : 500,
                 }}
               >
@@ -249,7 +253,7 @@ const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
                   background: 'transparent',
                   border: '1px solid var(--border-subtle)',
                   borderRadius: 4,
-                  color: 'var(--accent-green)',
+                  color: '#FF551F',
                   padding: '2px 6px',
                   fontSize: 10,
                   display: 'flex',
@@ -287,7 +291,7 @@ const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
                       lineHeight: 1.4,
                     }}
                   >
-                    Click <span style={{ color: 'var(--accent-green)' }}>+ Add Clip</span> or drop video / image sequences here
+                    Click <span style={{ color: '#FF551F' }}>+ Add Clip</span> or drop video / image sequences here
                   </div>
                 ) : (
                   tracks.map((track, index) => {
@@ -304,9 +308,9 @@ const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
                           borderRadius: 'var(--radius-sm)',
                           background: isSelected ? 'var(--bg-card-active)' : 'var(--bg-card)',
                           border: isSelected
-                            ? '1px solid #1e4535'
+                            ? '1px solid #FF551F'
                             : track.enabled && exportScope === 'master'
-                            ? '1px solid #3d3419'
+                            ? '1px solid #FF551F'
                             : '1px solid var(--border-subtle)',
                           cursor: 'pointer',
                           transition: 'all 0.15s ease',
@@ -324,7 +328,7 @@ const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
                             }}
                             title="Include in Master Atlas"
                             style={{
-                              accentColor: 'var(--accent-green)',
+                              accentColor: '#FF551F',
                               cursor: 'pointer',
                               width: 14,
                               height: 14,
@@ -338,7 +342,7 @@ const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
                               width: 28,
                               height: 28,
                               borderRadius: 4,
-                              background: '#18201d',
+                              background: '#1f2026',
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
@@ -370,7 +374,7 @@ const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
                                 padding: '2px 6px',
                                 fontSize: 11,
                                 fontWeight: 700,
-                                color: isSelected ? 'var(--accent-green)' : 'var(--text-bright)',
+                                color: isSelected ? '#FF551F' : 'var(--text-bright)',
                                 background: 'var(--bg-input)',
                                 border: '1px solid var(--border-subtle)',
                                 borderRadius: 4,
@@ -437,9 +441,9 @@ const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
                               padding: '2px 6px',
                               fontSize: 9,
                               borderRadius: 4,
-                              background: track.loop ? '#13281d' : '#221915',
-                              border: track.loop ? '1px solid #1e4d36' : '1px solid #4a2818',
-                              color: track.loop ? 'var(--accent-green)' : 'var(--accent-orange)',
+                              background: track.loop ? '#2B2D37' : 'transparent',
+                              border: track.loop ? '1px solid #FF551F' : '1px solid var(--border-subtle)',
+                              color: track.loop ? '#FF551F' : 'var(--text-muted)',
                               display: 'flex',
                               alignItems: 'center',
                               gap: 3,
@@ -467,6 +471,8 @@ const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
               onChange={onChangeKeying}
               isEyedropperActive={isEyedropperActive}
               setIsEyedropperActive={setIsEyedropperActive}
+              eyedropperTarget={eyedropperTarget}
+              setEyedropperTarget={setEyedropperTarget}
               onAutoDetectKey={onAutoDetectKey}
             />
           </div>

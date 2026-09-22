@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { AtlasSettings, CollisionSettings } from '../core/types';
 import { StatePreset } from '../core/boundingCrop';
-import { Scissors, RotateCcw, Shield, Wand2 } from 'lucide-react';
+import { Scissors, RotateCcw, Shield, Wand2, Copy, FileArchive } from 'lucide-react';
 
 interface AtlasPanelProps {
   settings: AtlasSettings;
@@ -26,6 +26,8 @@ const AtlasPanelComponent: React.FC<AtlasPanelProps> = ({
   onResetCrop,
   onAutoFitFeet,
 }) => {
+  const [showPackTooltip, setShowPackTooltip] = useState(false);
+
   const update = <K extends keyof AtlasSettings>(key: K, value: AtlasSettings[K]) => {
     onChange({ ...settings, [key]: value });
   };
@@ -54,7 +56,7 @@ const AtlasPanelComponent: React.FC<AtlasPanelProps> = ({
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 4 }}>
       {/* Section Header */}
       <div className="sidebar-section-title">
-        <span>Atlas Grid Settings</span>
+        <span>Atlas Settings</span>
         <button
           onClick={onRefreshAtlas}
           style={{
@@ -68,6 +70,113 @@ const AtlasPanelComponent: React.FC<AtlasPanelProps> = ({
         >
           Refresh
         </button>
+      </div>
+
+      {/* Layout Mode Switcher (Regular Grid vs Advanced Pack) */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>
+            Layout Mode
+          </span>
+          <span style={{ fontSize: 9, color: 'var(--text-dim)' }}>
+            {settings.layoutMode === 'advanced' ? 'iGaming / Spine' : 'Uniform Grid'}
+          </span>
+        </div>
+
+        <div style={{ display: 'flex', gap: 6 }}>
+          {/* Regular Grid Button */}
+          <button
+            type="button"
+            onClick={() => {
+              update('layoutMode', 'grid');
+              setTimeout(onRefreshAtlas, 10);
+            }}
+            style={{
+              flex: 1,
+              height: 30,
+              padding: '0 8px',
+              fontSize: 11,
+              fontWeight: settings.layoutMode !== 'advanced' ? 700 : 500,
+              borderRadius: 5,
+              background: settings.layoutMode !== 'advanced' ? '#2B2D37' : 'var(--bg-input)',
+              border: settings.layoutMode !== 'advanced' ? '1px solid #FF551F' : '1px solid var(--border-subtle)',
+              color: settings.layoutMode !== 'advanced' ? '#ffffff' : 'var(--text-muted)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 5,
+            }}
+          >
+            <span>⊞ Regular Grid</span>
+          </button>
+
+          {/* Advanced Pack Button with Hover Tooltip */}
+          <div style={{ flex: 1, position: 'relative' }}>
+            <button
+              type="button"
+              onClick={() => {
+                update('layoutMode', 'advanced');
+                setTimeout(onRefreshAtlas, 10);
+              }}
+              onMouseEnter={() => setShowPackTooltip(true)}
+              onMouseLeave={() => setShowPackTooltip(false)}
+              style={{
+                width: '100%',
+                height: 30,
+                padding: '0 8px',
+                fontSize: 11,
+                fontWeight: settings.layoutMode === 'advanced' ? 700 : 500,
+                borderRadius: 5,
+                background: settings.layoutMode === 'advanced' ? '#2B2D37' : 'var(--bg-input)',
+                border: settings.layoutMode === 'advanced' ? '1px solid #FF551F' : '1px solid var(--border-subtle)',
+                color: settings.layoutMode === 'advanced' ? '#FF551F' : 'var(--text-muted)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 5,
+              }}
+            >
+              <span>⚡ Advanced Pack</span>
+            </button>
+
+            {/* Hover Explanation Popover */}
+            {showPackTooltip && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  right: 0,
+                  marginTop: 6,
+                  width: 270,
+                  background: '#121316',
+                  border: '1px solid #FF551F',
+                  borderRadius: 8,
+                  padding: 12,
+                  boxShadow: '0 12px 30px rgba(0,0,0,0.85)',
+                  zIndex: 999,
+                  pointerEvents: 'none',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 6,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#FF551F', fontSize: 11, fontWeight: 700 }}>
+                  <span>⚡ Advanced Pack (iGaming / Spine)</span>
+                </div>
+                <div style={{ fontSize: 10, color: 'var(--text-main)', lineHeight: 1.4 }}>
+                  Профессиональный упаковщик атласов стандарта <b>Spine 2D & libGDX</b>:
+                </div>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.35, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div>• <b>Trim Whitespace:</b> срезает 100% пустых прозрачных пикселей вокруг персонажа.</div>
+                  <div>• <b>Tight Bin-Packing:</b> плотно спрессовывает кадры в минимальный квадрат, экономя <b>до 60–70% VRAM</b>.</div>
+                  <div>• <b>Spine & Pixi.js:</b> автоматически создаёт файлы <code>.atlas</code> и <code>.json</code> с сохранением точных координат привязки.</div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Frame Size */}
@@ -150,9 +259,9 @@ const AtlasPanelComponent: React.FC<AtlasPanelProps> = ({
                 padding: 0,
                 fontSize: 11,
                 borderRadius: 5,
-                background: isActive ? '#112b20' : 'var(--bg-input)',
-                border: isActive ? '1px solid var(--accent-green)' : '1px solid var(--border-subtle)',
-                color: isActive ? 'var(--accent-green)' : 'var(--text-muted)',
+                background: isActive ? '#2B2D37' : 'var(--bg-input)',
+                border: isActive ? '1px solid #FF551F' : '1px solid var(--border-subtle)',
+                color: isActive ? '#FF551F' : 'var(--text-muted)',
                 fontWeight: isActive ? 700 : 500,
               }}
             >
@@ -170,13 +279,13 @@ const AtlasPanelComponent: React.FC<AtlasPanelProps> = ({
           gap: 8,
           padding: '10px 10px',
           background: 'var(--bg-card)',
-          border: settings.cropBox ? '1px solid #1c4d36' : '1px solid var(--border-subtle)',
+          border: '1px solid #2D2E37',
           borderRadius: 6,
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Scissors size={12} color="var(--accent-green)" />
+            <Scissors size={12} color="#FF551F" />
             <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-bright)' }}>
               Auto-Crop & Padding
             </span>
@@ -229,9 +338,9 @@ const AtlasPanelComponent: React.FC<AtlasPanelProps> = ({
                     fontSize: 10,
                     fontWeight: isSelected ? 700 : 500,
                     borderRadius: 4,
-                    background: isSelected ? '#112b20' : 'var(--bg-input)',
-                    border: isSelected ? '1px solid var(--accent-green)' : '1px solid var(--border-subtle)',
-                    color: isSelected ? 'var(--accent-green)' : 'var(--text-muted)',
+                    background: isSelected ? '#2B2D37' : 'var(--bg-input)',
+                    border: isSelected ? '1px solid #FF551F' : '1px solid var(--border-subtle)',
+                    color: isSelected ? '#FF551F' : 'var(--text-muted)',
                     cursor: 'pointer',
                   }}
                 >
@@ -252,10 +361,10 @@ const AtlasPanelComponent: React.FC<AtlasPanelProps> = ({
             alignItems: 'center',
             justifyContent: 'center',
             gap: 6,
-            background: settings.cropBox ? '#0d2b1e' : 'var(--bg-input)',
-            border: settings.cropBox ? '1px solid var(--accent-green)' : '1px solid var(--border-subtle)',
+            background: settings.cropBox ? '#2B2D37' : 'var(--bg-input)',
+            border: settings.cropBox ? '1px solid #FF551F' : '1px solid var(--border-subtle)',
             borderRadius: 5,
-            color: settings.cropBox ? 'var(--accent-green)' : 'var(--text-main)',
+            color: settings.cropBox ? '#FF551F' : 'var(--text-main)',
             fontSize: 11,
             fontWeight: 600,
             cursor: isAutoCropping ? 'wait' : 'pointer',
@@ -282,7 +391,7 @@ const AtlasPanelComponent: React.FC<AtlasPanelProps> = ({
           gap: 8,
           padding: '10px 10px',
           background: 'var(--bg-card)',
-          border: settings.enableShadow ? '1px solid #1c4d36' : '1px solid var(--border-subtle)',
+          border: '1px solid var(--border-subtle)',
           borderRadius: 6,
         }}
       >
@@ -295,14 +404,14 @@ const AtlasPanelComponent: React.FC<AtlasPanelProps> = ({
               cursor: 'pointer',
               fontSize: 11,
               fontWeight: 600,
-              color: settings.enableShadow ? 'var(--accent-green)' : 'var(--text-bright)',
+              color: 'var(--text-bright)',
             }}
           >
             <input
               type="checkbox"
               checked={settings.enableShadow ?? false}
               onChange={(e) => update('enableShadow', e.target.checked)}
-              style={{ accentColor: 'var(--accent-green)', cursor: 'pointer' }}
+              style={{ accentColor: '#FF551F', cursor: 'pointer' }}
             />
             Contact Drop-Shadow
           </label>
@@ -352,9 +461,7 @@ const AtlasPanelComponent: React.FC<AtlasPanelProps> = ({
           gap: 8,
           padding: '10px 10px',
           background: 'var(--bg-card)',
-          border: settings.collisionSettings?.generateTscn
-            ? '1px solid #1a4d66'
-            : '1px solid var(--border-subtle)',
+          border: '1px solid #2D2E37',
           borderRadius: 6,
         }}
       >
@@ -367,9 +474,7 @@ const AtlasPanelComponent: React.FC<AtlasPanelProps> = ({
               cursor: 'pointer',
               fontSize: 11,
               fontWeight: 600,
-              color: settings.collisionSettings?.generateTscn
-                ? 'var(--accent-cyan)'
-                : 'var(--text-bright)',
+              color: 'var(--text-bright)',
             }}
           >
             <input
@@ -392,7 +497,7 @@ const AtlasPanelComponent: React.FC<AtlasPanelProps> = ({
                 };
                 update('collisionSettings', { ...cur, generateTscn: e.target.checked });
               }}
-              style={{ accentColor: 'var(--accent-cyan)', cursor: 'pointer' }}
+              style={{ accentColor: '#FF551F', cursor: 'pointer' }}
             />
             <span>Export Godot 4 Scene (.tscn)</span>
           </label>
@@ -422,9 +527,9 @@ const AtlasPanelComponent: React.FC<AtlasPanelProps> = ({
                       feet: { ...cur.feet, enabled: e.target.checked },
                     });
                   }}
-                  style={{ accentColor: '#00f084' }}
+                  style={{ accentColor: '#FF551F' }}
                 />
-                <span style={{ color: '#00f084', fontWeight: 600 }}>Feet Collider</span>
+                <span style={{ color: 'var(--text-bright)', fontWeight: 600 }}>Feet Collider</span>
               </label>
 
               {onAutoFitFeet && (
@@ -439,9 +544,9 @@ const AtlasPanelComponent: React.FC<AtlasPanelProps> = ({
                     fontSize: 9,
                     fontWeight: 600,
                     borderRadius: 4,
-                    background: '#0d2b1e',
-                    border: '1px solid var(--accent-green)',
-                    color: 'var(--accent-green)',
+                    background: '#2B2D37',
+                    border: '1px solid #2D2E37',
+                    color: '#FF551F',
                     cursor: 'pointer',
                   }}
                   title="Auto-detect feet width and center from ground contact pixels"
@@ -506,6 +611,104 @@ const AtlasPanelComponent: React.FC<AtlasPanelProps> = ({
             </div>
           </div>
         )}
+      </div>
+
+      {/* Atlas Optimization (Duplicates & PNG-8) */}
+      <div
+        style={{
+          background: '#121316',
+          border: '1px solid #2D2E37',
+          borderRadius: 8,
+          padding: 10,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Copy size={13} color="#FF551F" />
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-bright)' }}>
+              Atlas Optimization
+            </span>
+          </div>
+          <span
+            style={{
+              fontSize: 9,
+              background: '#2B2D37',
+              color: '#00f084',
+              padding: '1px 6px',
+              borderRadius: 4,
+              fontWeight: 700,
+            }}
+          >
+            VRAM & Disk
+          </span>
+        </div>
+
+        {/* 1. Eliminate Duplicate Frames */}
+        <label
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            cursor: 'pointer',
+            padding: '4px 6px',
+            borderRadius: 5,
+            background: settings.eliminateDuplicates ? '#22232A' : 'transparent',
+            border: settings.eliminateDuplicates ? '1px solid #2D2E37' : '1px solid transparent',
+          }}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: settings.eliminateDuplicates ? 'var(--text-bright)' : 'var(--text-muted)' }}>
+              ✂️ Eliminate Duplicate Frames
+            </span>
+            <span style={{ fontSize: 9, color: 'var(--text-dim)' }}>
+              Packs unique frames only (saves up to 40% area)
+            </span>
+          </div>
+          <input
+            type="checkbox"
+            checked={!!settings.eliminateDuplicates}
+            onChange={(e) => {
+              update('eliminateDuplicates', e.target.checked);
+              setTimeout(onRefreshAtlas, 10);
+            }}
+            style={{ accentColor: '#FF551F' }}
+          />
+        </label>
+
+        {/* 2. PNG-8 NeuQuant Compression */}
+        <label
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            cursor: 'pointer',
+            padding: '4px 6px',
+            borderRadius: 5,
+            background: settings.enablePng8 ? '#22232A' : 'transparent',
+            border: settings.enablePng8 ? '1px solid #2D2E37' : '1px solid transparent',
+          }}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: settings.enablePng8 ? '#00e5ff' : 'var(--text-muted)' }}>
+              🗜️ PNG-8 NeuQuant (256 Colors)
+            </span>
+            <span style={{ fontSize: 9, color: 'var(--text-dim)' }}>
+              60%–80% smaller PNG with alpha transparency
+            </span>
+          </div>
+          <input
+            type="checkbox"
+            checked={!!settings.enablePng8}
+            onChange={(e) => {
+              update('enablePng8', e.target.checked);
+              setTimeout(onRefreshAtlas, 10);
+            }}
+            style={{ accentColor: '#00e5ff' }}
+          />
+        </label>
       </div>
 
       {/* Grid (Cols x Rows) */}

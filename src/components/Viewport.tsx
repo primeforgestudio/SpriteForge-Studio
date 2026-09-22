@@ -1,15 +1,21 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { BackgroundMode, GarbageMatteSettings, CollisionSettings } from '../core/types';
-import { Plus, Minus, RotateCcw, Maximize2, Pipette, Crosshair, Layers, Scissors, Shield } from 'lucide-react';
+import { BackgroundMode, GarbageMatteSettings, CollisionSettings, MeshSettings, SpriteMesh } from '../core/types';
+import { Plus, Minus, RotateCcw, Maximize2, Pipette, Crosshair, Layers, Scissors, Shield, Columns, Sun, Lightbulb, Eye, ChevronDown, Check, Box } from 'lucide-react';
+import { NormalMapGenerator } from '../core/normalMapGenerator';
+import { PbrGenerator } from '../core/pbrGenerator';
+import { MeshGenerator } from '../core/meshGenerator';
 
 interface ViewportProps {
   frameCanvas: HTMLCanvasElement | null;
+  rawFrameCanvas?: HTMLCanvasElement | null;
   bgMode: BackgroundMode;
   setBgMode: (mode: BackgroundMode) => void;
   bgColor: [number, number, number];
   setBgColor: (color: [number, number, number]) => void;
   isEyedropperActive: boolean;
   setIsEyedropperActive: (active: boolean) => void;
+  eyedropperTarget?: 'primary' | 'secondary';
+  setEyedropperTarget?: (target: 'primary' | 'secondary') => void;
   onPickColor: (color: [number, number, number]) => void;
   onFilesDropped: (files: FileList) => void;
   emptyMessage?: string;
@@ -36,17 +42,25 @@ interface ViewportProps {
   onUpdateCollisionSettings?: (settings: CollisionSettings) => void;
   showColliders?: boolean;
   setShowColliders?: (show: boolean) => void;
+  // 2D Mesh & Overdraw
+  meshSettings?: MeshSettings;
+  onUpdateMeshSettings?: (settings: MeshSettings) => void;
+  showMeshWireframe?: boolean;
+  setShowMeshWireframe?: (show: boolean) => void;
   renderTrigger?: number;
 }
 
-export const Viewport: React.FC<ViewportProps> = ({
+const ViewportComponent: React.FC<ViewportProps> = ({
   frameCanvas,
+  rawFrameCanvas,
   bgMode,
   setBgMode,
   bgColor,
   setBgColor,
   isEyedropperActive,
   setIsEyedropperActive,
+  eyedropperTarget = 'primary',
+  setEyedropperTarget,
   onPickColor,
   onFilesDropped,
   emptyMessage = 'Drop Video or PNG Sequence here',
@@ -69,6 +83,10 @@ export const Viewport: React.FC<ViewportProps> = ({
   onUpdateCollisionSettings,
   showColliders = false,
   setShowColliders,
+  meshSettings,
+  onUpdateMeshSettings,
+  showMeshWireframe = false,
+  setShowMeshWireframe,
   renderTrigger,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -81,6 +99,108 @@ export const Viewport: React.FC<ViewportProps> = ({
   const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [hoverColor, setHoverColor] = useState<[number, number, number] | null>(null);
   const [isDraggingPivot, setIsDraggingPivot] = useState(false);
+
+  // 2D Mesh Wireframe & Fillrate Stats State
+  const [localShowMeshWireframe, setLocalShowMeshWireframe] = useState(false);
+  const effectiveShowMesh = setShowMeshWireframe ? showMeshWireframe : localShowMeshWireframe;
+  const [currentMeshStats, setCurrentMeshStats] = useState<SpriteMesh | null>(null);
+  const currentMeshRef = useRef<SpriteMesh | null>(null);
+
+  useEffect(() => {
+    if (!frameCanvas) {
+      currentMeshRef.current = null;
+      setCurrentMeshStats(null);
+      return;
+    }
+    if (effectiveShowMesh || meshSettings?.showWireframe || meshSettings?.enabled) {
+      try {
+        const m = MeshGenerator.generateMesh(frameCanvas, meshSettings);
+        currentMeshRef.current = m;
+        setCurrentMeshStats(m);
+      } catch (err) {
+        console.warn('Failed to compute sprite mesh:', err);
+      }
+    }
+  }, [
+    frameCanvas,
+    effectiveShowMesh,
+    meshSettings?.showWireframe,
+    meshSettings?.enabled,
+    meshSettings?.detail,
+    meshSettings?.paddingPx,
+    meshSettings?.alphaThreshold,
+    renderTrigger,
+  ]);
+
+  // Split-Screen Wipe («Шторка До / После») State
+  const [isWipeActive, setIsWipeActive] = useState(false);
+  const [wipePosition, setWipePosition] = useState(0.5);
+  const [isDraggingWipe, setIsDraggingWipe] = useState(false);
+
+  // 2.5D Dynamic Light Gizmo State
+  const [isLightActive, setIsLightActive] = useState(false);
+  const [lightPos, setLightPos] = useState<{ x: number; y: number }>({ x: 256, y: 150 });
+  const [isDraggingLight, setIsDraggingLight] = useState(false);
+  const cachedNormalCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const cachedRoughnessCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const cachedEmissionCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const cachedNormalSourceRef = useRef<HTMLCanvasElement | null>(null);
+
+  // Overlays Dropdown Menu State
+  const [showOverlaysDropdown, setShowOverlaysDropdown] = useState(false);
+  const overlaysDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showOverlaysDropdown) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (overlaysDropdownRef.current && !overlaysDropdownRef.current.contains(e.target as Node)) {
+        setShowOverlaysDropdown(false);
+      }
+    };
+    window.addEventListener('mousedown', handleClickOutside);
+    return () => window.removeEventListener('mousedown', handleClickOutside);
+  }, [showOverlaysDropdown]);
+
+  // Global mouse handlers for Split-Screen Wipe dragging
+  useEffect(() => {
+    if (!isDraggingWipe) return;
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!displayCanvasRef.current) return;
+      const rect = displayCanvasRef.current.getBoundingClientRect();
+      if (rect.width <= 0) return;
+      const ratio = Math.max(0.02, Math.min(0.98, (e.clientX - rect.left) / rect.width));
+      setWipePosition(ratio);
+    };
+    const handleMouseUp = () => setIsDraggingWipe(false);
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDraggingWipe]);
+
+  // Global mouse handlers for 2.5D Light Gizmo dragging
+  useEffect(() => {
+    if (!isDraggingLight) return;
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!displayCanvasRef.current || !frameCanvas) return;
+      const rect = displayCanvasRef.current.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      const lx = Math.max(0, Math.min(frameCanvas.width, ((e.clientX - rect.left) / rect.width) * frameCanvas.width));
+      const ly = Math.max(0, Math.min(frameCanvas.height, ((e.clientY - rect.top) / rect.height) * frameCanvas.height));
+      setLightPos({ x: lx, y: ly });
+    };
+    const handleMouseUp = () => setIsDraggingLight(false);
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDraggingLight, frameCanvas]);
 
   // Garbage Matte Dragging State
   type MatteHandle = 'move' | 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
@@ -298,30 +418,174 @@ export const Viewport: React.FC<ViewportProps> = ({
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    if (showMask) {
-      ctx.fillStyle = '#000000';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-    } else if (bgMode === 'solid') {
-      ctx.fillStyle = `rgb(${bgColor[0]}, ${bgColor[1]}, ${bgColor[2]})`;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // 2.5D Dynamic Lighting
+    let drawnFrame = frameCanvas;
+    if (isLightActive && frameCanvas) {
+      if (
+        !cachedNormalCanvasRef.current ||
+        cachedNormalSourceRef.current !== frameCanvas ||
+        cachedNormalCanvasRef.current.width !== frameCanvas.width ||
+        cachedNormalCanvasRef.current.height !== frameCanvas.height
+      ) {
+        cachedNormalCanvasRef.current = NormalMapGenerator.generateNormalMap(frameCanvas, 2.8);
+        cachedRoughnessCanvasRef.current = PbrGenerator.generateRoughnessMap(frameCanvas, 50);
+        cachedEmissionCanvasRef.current = PbrGenerator.generateEmissionMap(frameCanvas, 180, 1.5);
+        cachedNormalSourceRef.current = frameCanvas;
+      }
+      drawnFrame = NormalMapGenerator.applyDynamicLight(
+        frameCanvas,
+        cachedNormalCanvasRef.current,
+        lightPos.x,
+        lightPos.y,
+        75,
+        380,
+        [255, 245, 220],
+        1.35,
+        0.35,
+        cachedRoughnessCanvasRef.current,
+        cachedEmissionCanvasRef.current
+      );
     }
 
-    // Onion Skinning: render previous (coral) and next (cyan) keyframe ghosts
-    if (!showMask && enableOnionSkin && onionGhosts) {
-      if (onionGhosts.prev) {
-        ctx.drawImage(onionGhosts.prev, 0, 0);
+    // Split-Screen Wipe («Шторка До / После»)
+    if (isWipeActive && rawFrameCanvas) {
+      const splitX = Math.round(canvas.width * wipePosition);
+
+      // 1. Left side: Raw unkeyed original frame
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, splitX, canvas.height);
+      ctx.clip();
+      ctx.drawImage(rawFrameCanvas, 0, 0);
+      ctx.restore();
+
+      // 2. Right side: Processed (keyed / lit) frame with background
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(splitX, 0, canvas.width - splitX, canvas.height);
+      ctx.clip();
+      if (showMask) {
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(splitX, 0, canvas.width - splitX, canvas.height);
+      } else if (bgMode === 'solid') {
+        ctx.fillStyle = `rgb(${bgColor[0]}, ${bgColor[1]}, ${bgColor[2]})`;
+        ctx.fillRect(splitX, 0, canvas.width - splitX, canvas.height);
       }
-      if (onionGhosts.next) {
-        ctx.drawImage(onionGhosts.next, 0, 0);
+      if (!showMask && enableOnionSkin && onionGhosts) {
+        if (onionGhosts.prev) ctx.drawImage(onionGhosts.prev, 0, 0);
+        if (onionGhosts.next) ctx.drawImage(onionGhosts.next, 0, 0);
       }
+      ctx.drawImage(drawnFrame, 0, 0);
+      ctx.restore();
+
+      // 3. Divider line
+      ctx.save();
+      ctx.strokeStyle = '#FF551F';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(splitX, 0);
+      ctx.lineTo(splitX, canvas.height);
+      ctx.stroke();
+      ctx.restore();
+    } else {
+      // Normal full-frame draw
+      if (showMask) {
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      } else if (bgMode === 'solid') {
+        ctx.fillStyle = `rgb(${bgColor[0]}, ${bgColor[1]}, ${bgColor[2]})`;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+
+      // Onion Skinning: render previous (coral) and next (cyan) keyframe ghosts
+      if (!showMask && enableOnionSkin && onionGhosts) {
+        if (onionGhosts.prev) {
+          ctx.drawImage(onionGhosts.prev, 0, 0);
+        }
+        if (onionGhosts.next) {
+          ctx.drawImage(onionGhosts.next, 0, 0);
+        }
+      }
+
+      ctx.drawImage(drawnFrame, 0, 0);
     }
 
-    ctx.drawImage(frameCanvas, 0, 0);
-  }, [frameCanvas, bgMode, bgColor, showMask, enableOnionSkin, onionGhosts]);
+    // 2D Mesh Wireframe Overlay
+    if ((effectiveShowMesh || meshSettings?.showWireframe) && currentMeshRef.current) {
+      const mesh = currentMeshRef.current;
+      ctx.save();
+      // Semi-transparent mesh fill
+      ctx.fillStyle = 'rgba(0, 229, 255, 0.08)';
+      for (let i = 0; i < mesh.indices.length; i += 3) {
+        const p0 = mesh.vertices[mesh.indices[i]];
+        const p1 = mesh.vertices[mesh.indices[i + 1]];
+        const p2 = mesh.vertices[mesh.indices[i + 2]];
+        if (p0 && p1 && p2) {
+          ctx.beginPath();
+          ctx.moveTo(p0[0], p0[1]);
+          ctx.lineTo(p1[0], p1[1]);
+          ctx.lineTo(p2[0], p2[1]);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+
+      // Wireframe triangle edges
+      ctx.strokeStyle = 'rgba(0, 229, 255, 0.75)';
+      ctx.lineWidth = 1;
+      for (let i = 0; i < mesh.indices.length; i += 3) {
+        const p0 = mesh.vertices[mesh.indices[i]];
+        const p1 = mesh.vertices[mesh.indices[i + 1]];
+        const p2 = mesh.vertices[mesh.indices[i + 2]];
+        if (p0 && p1 && p2) {
+          ctx.beginPath();
+          ctx.moveTo(p0[0], p0[1]);
+          ctx.lineTo(p1[0], p1[1]);
+          ctx.lineTo(p2[0], p2[1]);
+          ctx.closePath();
+          ctx.stroke();
+        }
+      }
+
+      // Vertices dots
+      ctx.fillStyle = '#00e5ff';
+      for (const pt of mesh.vertices) {
+        ctx.beginPath();
+        ctx.arc(pt[0], pt[1], 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+  }, [
+    frameCanvas,
+    rawFrameCanvas,
+    bgMode,
+    bgColor,
+    showMask,
+    enableOnionSkin,
+    onionGhosts,
+    isWipeActive,
+    wipePosition,
+    isLightActive,
+    lightPos,
+    effectiveShowMesh,
+    meshSettings?.showWireframe,
+    currentMeshStats,
+  ]);
 
   useEffect(() => {
     render();
-  }, [render, renderTrigger]);
+  }, [
+    render,
+    renderTrigger,
+    isWipeActive,
+    wipePosition,
+    isLightActive,
+    lightPos,
+    effectiveShowMesh,
+    meshSettings?.showWireframe,
+    currentMeshStats,
+  ]);
 
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
@@ -400,12 +664,13 @@ export const Viewport: React.FC<ViewportProps> = ({
   };
 
   // Background selector helper
-  const isPresetActive = (type: 'grid' | 'green' | 'black' | 'white') => {
+  const isPresetActive = (type: 'grid' | 'green' | 'black' | 'white' | 'magenta') => {
     if (type === 'grid') return bgMode === 'checkerboard';
     if (bgMode !== 'solid') return false;
     if (type === 'green') return bgColor[1] > 180 && bgColor[0] < 100;
     if (type === 'black') return bgColor[0] === 0 && bgColor[1] === 0 && bgColor[2] === 0;
     if (type === 'white') return bgColor[0] === 255 && bgColor[1] === 255 && bgColor[2] === 255;
+    if (type === 'magenta') return bgColor[0] === 255 && bgColor[1] === 0 && bgColor[2] === 255;
     return false;
   };
 
@@ -424,7 +689,7 @@ export const Viewport: React.FC<ViewportProps> = ({
       style={{
         flex: 1,
         position: 'relative',
-        background: '#0d1311',
+        background: '#17181C',
         border: '1px solid var(--border-subtle)',
         borderRadius: 'var(--radius-lg)',
         overflow: 'hidden',
@@ -444,7 +709,7 @@ export const Viewport: React.FC<ViewportProps> = ({
           display: 'flex',
           alignItems: 'center',
           gap: 2,
-          background: 'rgba(19, 25, 23, 0.92)',
+          background: 'rgba(23, 24, 28, 0.95)',
           padding: '3px 4px',
           borderRadius: 8,
           border: '1px solid var(--border-subtle)',
@@ -502,15 +767,16 @@ export const Viewport: React.FC<ViewportProps> = ({
         <button
           onClick={() => setIsEyedropperActive(!isEyedropperActive)}
           style={{
-            background: isEyedropperActive ? 'var(--accent-green)' : 'transparent',
-            color: isEyedropperActive ? '#000' : 'var(--text-main)',
-            border: 'none',
+            background: isEyedropperActive ? '#2B2D37' : 'transparent',
+            color: isEyedropperActive ? '#FF551F' : 'var(--text-main)',
+            border: isEyedropperActive ? '1.5px solid #FF551F' : 'none',
             padding: '4px 6px',
             borderRadius: 4,
+            cursor: 'pointer',
           }}
           title="Eyedropper (Pick Chroma Key Color)"
         >
-          <Pipette size={13} />
+          <Pipette size={13} color={isEyedropperActive ? '#FF551F' : 'var(--text-main)'} />
         </button>
 
         {showPivot && onUpdatePivot && (
@@ -524,7 +790,7 @@ export const Viewport: React.FC<ViewportProps> = ({
                 padding: '4px 6px',
                 fontSize: 10,
                 fontWeight: 700,
-                color: 'var(--accent-green)',
+                color: '#FF551F',
                 cursor: 'pointer',
                 borderRadius: 4,
               }}
@@ -552,7 +818,7 @@ export const Viewport: React.FC<ViewportProps> = ({
         )}
       </div>
 
-      {/* Top-Right Floating Background Presets (from screenshot) */}
+      {/* Top-Right Floating Tools: Compact & Non-overlapping */}
       <div
         style={{
           position: 'absolute',
@@ -561,204 +827,398 @@ export const Viewport: React.FC<ViewportProps> = ({
           zIndex: 10,
           display: 'flex',
           alignItems: 'center',
-          gap: 3,
-          background: 'rgba(19, 25, 23, 0.92)',
+          gap: 4,
+          background: 'rgba(23, 24, 28, 0.95)',
           padding: '3px 4px',
           borderRadius: 8,
           border: '1px solid var(--border-subtle)',
           backdropFilter: 'blur(8px)',
         }}
       >
-        <button
-          onClick={() => setBgMode('checkerboard')}
-          style={{
-            background: isPresetActive('grid') ? '#26332e' : 'transparent',
-            color: isPresetActive('grid') ? '#fff' : 'var(--text-muted)',
-            border: 'none',
-            padding: '4px 10px',
-            borderRadius: 5,
-            fontWeight: 600,
-          }}
-        >
-          Grid
-        </button>
-
-        <button
-          onClick={() => {
-            setBgMode('solid');
-            setBgColor([0, 240, 132]);
-          }}
-          style={{
-            background: isPresetActive('green') ? 'var(--accent-green)' : 'transparent',
-            color: isPresetActive('green') ? '#000000' : 'var(--text-muted)',
-            border: 'none',
-            padding: '4px 10px',
-            borderRadius: 5,
-            fontWeight: 700,
-          }}
-        >
-          Green
-        </button>
-
-        <button
-          onClick={() => {
-            setBgMode('solid');
-            setBgColor([0, 0, 0]);
-          }}
-          style={{
-            background: isPresetActive('black') ? '#000000' : 'transparent',
-            color: isPresetActive('black') ? '#fff' : 'var(--text-muted)',
-            border: isPresetActive('black') ? '1px solid #444' : 'none',
-            padding: '4px 10px',
-            borderRadius: 5,
-            fontWeight: 600,
-          }}
-        >
-          Black
-        </button>
-
-        <button
-          onClick={() => {
-            setBgMode('solid');
-            setBgColor([255, 255, 255]);
-          }}
-          style={{
-            background: isPresetActive('white') ? '#ffffff' : 'transparent',
-            color: isPresetActive('white') ? '#000000' : 'var(--text-muted)',
-            border: 'none',
-            padding: '4px 10px',
-            borderRadius: 5,
-            fontWeight: 700,
-          }}
-        >
-          White
-        </button>
-
-        {setShowMask && (
-          <>
-            <div style={{ width: 1, height: 16, background: 'var(--border-subtle)', margin: '0 2px' }} />
-            <button
-              onClick={() => setShowMask(!showMask)}
-              style={{
-                background: showMask ? 'var(--accent-cyan)' : 'transparent',
-                color: showMask ? '#000000' : 'var(--text-muted)',
-                border: showMask ? '1px solid var(--accent-cyan)' : 'none',
-                padding: '4px 8px',
-                borderRadius: 5,
-                fontWeight: 700,
-                fontSize: 11,
-                cursor: 'pointer',
-              }}
-              title="Toggle Alpha Mask / Matte inspection"
-            >
-              Mask
-            </button>
-          </>
-        )}
-
-        {setEnableOnionSkin && (
+        {/* Compact Background Swatch Buttons */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2, paddingRight: 4, borderRight: '1px solid var(--border-subtle)' }}>
+          {/* Grid / Checkerboard */}
           <button
-            onClick={() => setEnableOnionSkin(!enableOnionSkin)}
+            onClick={() => setBgMode('checkerboard')}
             style={{
-              background: enableOnionSkin ? '#ff5252' : 'transparent',
-              color: enableOnionSkin ? '#ffffff' : 'var(--text-muted)',
-              border: enableOnionSkin ? '1px solid #ff5252' : 'none',
-              padding: '4px 8px',
-              borderRadius: 5,
-              fontWeight: 700,
-              fontSize: 11,
+              width: 22,
+              height: 22,
+              borderRadius: 4,
+              border: isPresetActive('grid') ? '1.5px solid var(--accent-orange)' : '1px solid transparent',
+              background: '#2B2D37',
               cursor: 'pointer',
+              padding: 0,
               display: 'flex',
               alignItems: 'center',
-              gap: 4,
+              justifyContent: 'center',
             }}
-            title="Onion Skinning: overlay previous frame (coral red) and next frame (cyan)"
+            title="Checkerboard (Transparent)"
           >
-            <Layers size={11} />
-            Onion
+            <span style={{ fontSize: 11, lineHeight: 1 }}>▦</span>
           </button>
-        )}
 
-        {setShowPivot && (
-          <button
-            onClick={() => setShowPivot(!showPivot)}
-            style={{
-              background: showPivot ? 'var(--accent-green)' : 'transparent',
-              color: showPivot ? '#000000' : 'var(--text-muted)',
-              border: showPivot ? '1px solid var(--accent-green)' : 'none',
-              padding: '4px 8px',
-              borderRadius: 5,
-              fontWeight: 700,
-              fontSize: 11,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-            }}
-            title="Toggle Interactive Pivot Point (for Godot 4 and Unity)"
-          >
-            <Crosshair size={11} />
-            Pivot
-          </button>
-        )}
-
-        {setShowGarbageMatte && (
+          {/* Green */}
           <button
             onClick={() => {
-              const next = !showGarbageMatte;
-              setShowGarbageMatte(next);
-              if (next && onUpdateGarbageMatte && !garbageMatte?.enabled) {
-                onUpdateGarbageMatte({
-                  enabled: true,
-                  x: garbageMatte?.x ?? 0.05,
-                  y: garbageMatte?.y ?? 0.05,
-                  width: garbageMatte?.width ?? 0.9,
-                  height: garbageMatte?.height ?? 0.9,
-                  feather: garbageMatte?.feather ?? 2,
-                  invert: garbageMatte?.invert ?? false,
-                });
-              }
+              setBgMode('solid');
+              setBgColor([0, 240, 132]);
             }}
             style={{
-              background: showGarbageMatte ? '#f59e0b' : 'transparent',
-              color: showGarbageMatte ? '#000000' : 'var(--text-muted)',
-              border: showGarbageMatte ? '1px solid #f59e0b' : 'none',
-              padding: '4px 8px',
-              borderRadius: 5,
-              fontWeight: 700,
-              fontSize: 11,
+              width: 22,
+              height: 22,
+              borderRadius: 4,
+              border: isPresetActive('green') ? '1.5px solid var(--accent-orange)' : '1px solid transparent',
+              background: 'transparent',
               cursor: 'pointer',
+              padding: 0,
               display: 'flex',
               alignItems: 'center',
-              gap: 4,
+              justifyContent: 'center',
             }}
-            title="Garbage Matte: interactive cutout bounds for AI watermarks and edge artifacts"
+            title="Green Background"
           >
-            <Scissors size={11} />
-            Matte
+            <span style={{ width: 14, height: 14, borderRadius: 3, background: '#00f084', display: 'inline-block' }} />
           </button>
-        )}
 
-        {setShowColliders && (
+          {/* Black */}
           <button
-            onClick={() => setShowColliders(!showColliders)}
+            onClick={() => {
+              setBgMode('solid');
+              setBgColor([0, 0, 0]);
+            }}
             style={{
-              background: showColliders ? '#00b0ff' : 'transparent',
-              color: showColliders ? '#000000' : 'var(--text-muted)',
-              border: showColliders ? '1px solid #00b0ff' : 'none',
+              width: 22,
+              height: 22,
+              borderRadius: 4,
+              border: isPresetActive('black') ? '1.5px solid var(--accent-orange)' : '1px solid transparent',
+              background: 'transparent',
+              cursor: 'pointer',
+              padding: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+            title="Black Background"
+          >
+            <span style={{ width: 14, height: 14, borderRadius: 3, background: '#000000', border: '1px solid #333', display: 'inline-block' }} />
+          </button>
+
+          {/* White */}
+          <button
+            onClick={() => {
+              setBgMode('solid');
+              setBgColor([255, 255, 255]);
+            }}
+            style={{
+              width: 22,
+              height: 22,
+              borderRadius: 4,
+              border: isPresetActive('white') ? '1.5px solid var(--accent-orange)' : '1px solid transparent',
+              background: 'transparent',
+              cursor: 'pointer',
+              padding: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+            title="White Background"
+          >
+            <span style={{ width: 14, height: 14, borderRadius: 3, background: '#ffffff', display: 'inline-block' }} />
+          </button>
+
+          {/* Magenta */}
+          <button
+            onClick={() => {
+              setBgMode('solid');
+              setBgColor([255, 0, 255]);
+            }}
+            style={{
+              width: 22,
+              height: 22,
+              borderRadius: 4,
+              border: isPresetActive('magenta') ? '1.5px solid var(--accent-orange)' : '1px solid transparent',
+              background: 'transparent',
+              cursor: 'pointer',
+              padding: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+            title="Magenta (High-Contrast Spill Check)"
+          >
+            <span style={{ width: 14, height: 14, borderRadius: 3, background: '#ff00ff', display: 'inline-block' }} />
+          </button>
+        </div>
+
+        {/* Viewport Overlays Dropdown */}
+        <div style={{ position: 'relative' }} ref={overlaysDropdownRef}>
+          <button
+            onClick={() => setShowOverlaysDropdown(!showOverlaysDropdown)}
+            style={{
+              background: (showPivot || showColliders || showGarbageMatte || enableOnionSkin || showOverlaysDropdown)
+                ? '#2B2D37'
+                : 'transparent',
+              color: (showPivot || showColliders || showGarbageMatte || enableOnionSkin)
+                ? '#FF551F'
+                : 'var(--text-muted)',
+              border: (showPivot || showColliders || showGarbageMatte || enableOnionSkin)
+                ? '1px solid #FF551F'
+                : '1px solid transparent',
               padding: '4px 8px',
               borderRadius: 5,
-              fontWeight: 700,
+              fontWeight: 600,
               fontSize: 11,
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: 4,
+              gap: 5,
             }}
-            title="Toggle Godot 4 Physics Feet Collider, Hurtbox & Hitbox overlay"
+            title="Toggle Viewport Overlays (Pivot, Colliders, Garbage Matte, Onion Skin)"
           >
-            <Shield size={11} />
-            Colliders
+            <Layers size={12} />
+            <span>Overlays</span>
+            {((showPivot ? 1 : 0) + (showColliders ? 1 : 0) + (showGarbageMatte ? 1 : 0) + (enableOnionSkin ? 1 : 0)) > 0 && (
+              <span
+                style={{
+                  background: '#FF551F',
+                  color: '#ffffff',
+                  fontSize: 9,
+                  fontWeight: 700,
+                  padding: '0 4px',
+                  borderRadius: 8,
+                  lineHeight: '13px',
+                }}
+              >
+                {(showPivot ? 1 : 0) + (showColliders ? 1 : 0) + (showGarbageMatte ? 1 : 0) + (enableOnionSkin ? 1 : 0)}
+              </span>
+            )}
+            <ChevronDown size={11} style={{ opacity: 0.7 }} />
+          </button>
+
+          {showOverlaysDropdown && (
+            <div
+              style={{
+                position: 'absolute',
+                top: 'calc(100% + 6px)',
+                right: 0,
+                zIndex: 50,
+                minWidth: 200,
+                background: '#17181C',
+                border: '1px solid #2D2E37',
+                borderRadius: 8,
+                padding: '8px',
+                boxShadow: '0 10px 28px rgba(0,0,0,0.6)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 6,
+                backdropFilter: 'blur(10px)',
+              }}
+            >
+              {/* Pivot Point */}
+              {setShowPivot && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '4px', borderRadius: 4, background: showPivot ? '#22232A' : 'transparent' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', fontSize: 11, color: 'var(--text-bright)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <Crosshair size={12} color={showPivot ? '#FF551F' : 'var(--text-muted)'} />
+                      <span style={{ fontWeight: 500 }}>Pivot Point</span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={showPivot}
+                      onChange={() => setShowPivot(!showPivot)}
+                      style={{ accentColor: '#FF551F' }}
+                    />
+                  </label>
+                  {showPivot && onUpdatePivot && (
+                    <div style={{ display: 'flex', gap: 4, paddingLeft: 18, marginTop: 2 }}>
+                      <button
+                        onClick={() => onUpdatePivot({ x: 0.5, y: 0.95 })}
+                        style={{
+                          flex: 1,
+                          background: '#2B2D37',
+                          border: '1px solid #FF551F',
+                          color: '#FF551F',
+                          fontSize: 10,
+                          fontWeight: 600,
+                          padding: '2px 4px',
+                          borderRadius: 3,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Feet (95%)
+                      </button>
+                      <button
+                        onClick={() => onUpdatePivot({ x: 0.5, y: 0.5 })}
+                        style={{
+                          flex: 1,
+                          background: '#121316',
+                          border: '1px solid #2D2E37',
+                          color: 'var(--text-muted)',
+                          fontSize: 10,
+                          fontWeight: 500,
+                          padding: '2px 4px',
+                          borderRadius: 3,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Center (50%)
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Godot 4 Colliders */}
+              {setShowColliders && (
+                <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', padding: '4px', borderRadius: 4, background: showColliders ? '#22232A' : 'transparent', fontSize: 11, color: 'var(--text-bright)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Shield size={12} color={showColliders ? '#00b0ff' : 'var(--text-muted)'} />
+                    <span style={{ fontWeight: 500 }}>Godot 4 Colliders</span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={showColliders}
+                    onChange={() => setShowColliders(!showColliders)}
+                    style={{ accentColor: '#00b0ff' }}
+                  />
+                </label>
+              )}
+
+              {/* Garbage Matte */}
+              {setShowGarbageMatte && (
+                <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', padding: '4px', borderRadius: 4, background: showGarbageMatte ? '#22232A' : 'transparent', fontSize: 11, color: 'var(--text-bright)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Scissors size={12} color={showGarbageMatte ? '#FF551F' : 'var(--text-muted)'} />
+                    <span style={{ fontWeight: 500 }}>Garbage Matte</span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={showGarbageMatte}
+                    onChange={() => {
+                      const next = !showGarbageMatte;
+                      setShowGarbageMatte(next);
+                      if (next && onUpdateGarbageMatte && !garbageMatte?.enabled) {
+                        onUpdateGarbageMatte({
+                          enabled: true,
+                          x: garbageMatte?.x ?? 0.05,
+                          y: garbageMatte?.y ?? 0.05,
+                          width: garbageMatte?.width ?? 0.9,
+                          height: garbageMatte?.height ?? 0.9,
+                          feather: garbageMatte?.feather ?? 2,
+                          invert: garbageMatte?.invert ?? false,
+                        });
+                      }
+                    }}
+                    style={{ accentColor: '#FF551F' }}
+                  />
+                </label>
+              )}
+
+              {/* Onion Skinning */}
+              {setEnableOnionSkin && (
+                <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', padding: '4px', borderRadius: 4, background: enableOnionSkin ? '#22232A' : 'transparent', fontSize: 11, color: 'var(--text-bright)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Layers size={12} color={enableOnionSkin ? '#ff5252' : 'var(--text-muted)'} />
+                    <span style={{ fontWeight: 500 }}>Onion Skinning</span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={enableOnionSkin}
+                    onChange={() => setEnableOnionSkin(!enableOnionSkin)}
+                    style={{ accentColor: '#ff5252' }}
+                  />
+                </label>
+              )}
+
+              {/* 2D Mesh Wireframe */}
+              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', padding: '4px', borderRadius: 4, background: (effectiveShowMesh || meshSettings?.showWireframe) ? '#22232A' : 'transparent', fontSize: 11, color: 'var(--text-bright)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Box size={12} color={(effectiveShowMesh || meshSettings?.showWireframe) ? '#00e5ff' : 'var(--text-muted)'} />
+                  <span style={{ fontWeight: 500 }}>2D Mesh Wireframe</span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={!!(effectiveShowMesh || meshSettings?.showWireframe)}
+                  onChange={() => {
+                    const nextVal = !(effectiveShowMesh || meshSettings?.showWireframe);
+                    if (setShowMeshWireframe) {
+                      setShowMeshWireframe(nextVal);
+                    } else {
+                      setLocalShowMeshWireframe(nextVal);
+                    }
+                    if (onUpdateMeshSettings && meshSettings) {
+                      onUpdateMeshSettings({ ...meshSettings, showWireframe: nextVal });
+                    }
+                  }}
+                  style={{ accentColor: '#00e5ff' }}
+                />
+              </label>
+            </div>
+          )}
+        </div>
+
+        {/* Hero Visual Tools */}
+        {/* Split-Screen Wipe */}
+        <button
+          onClick={() => setIsWipeActive(!isWipeActive)}
+          style={{
+            background: isWipeActive ? 'var(--bg-input)' : 'transparent',
+            color: isWipeActive ? '#FF551F' : 'var(--text-muted)',
+            border: isWipeActive ? '1.5px solid #FF551F' : '1px solid transparent',
+            padding: '4px 8px',
+            borderRadius: 5,
+            fontWeight: 600,
+            fontSize: 11,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+          }}
+          title="Split-Screen Wipe: compare raw video vs keyed cutout"
+        >
+          <Columns size={11} />
+          <span>Wipe</span>
+        </button>
+
+        {/* 2.5D Dynamic Light Gizmo */}
+        <button
+          onClick={() => setIsLightActive(!isLightActive)}
+          style={{
+            background: isLightActive ? 'var(--bg-input)' : 'transparent',
+            color: isLightActive ? '#FFCC00' : 'var(--text-muted)',
+            border: isLightActive ? '1.5px solid #FFCC00' : '1px solid transparent',
+            padding: '4px 8px',
+            borderRadius: 5,
+            fontWeight: 600,
+            fontSize: 11,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+          }}
+          title="2.5D Dynamic Lighting: interactive point light on normal map"
+        >
+          <Sun size={11} />
+          <span>Light</span>
+        </button>
+
+        {/* Alpha Mask */}
+        {setShowMask && (
+          <button
+            onClick={() => setShowMask(!showMask)}
+            style={{
+              background: showMask ? 'var(--bg-input)' : 'transparent',
+              color: showMask ? '#ffffff' : 'var(--text-muted)',
+              border: showMask ? '1.5px solid var(--accent-orange)' : '1px solid transparent',
+              padding: '4px 8px',
+              borderRadius: 5,
+              fontWeight: 600,
+              fontSize: 11,
+              cursor: 'pointer',
+            }}
+            title="Toggle Alpha Mask / Matte view"
+          >
+            Mask
           </button>
         )}
       </div>
@@ -774,21 +1234,25 @@ export const Viewport: React.FC<ViewportProps> = ({
             display: 'flex',
             alignItems: 'center',
             gap: 8,
-            background: 'rgba(15, 20, 18, 0.95)',
-            padding: '5px 10px',
+            background: 'rgba(23, 24, 28, 0.95)',
+            padding: '6px 12px',
             borderRadius: 6,
-            border: '1px solid var(--border-subtle)',
+            border: '1px solid #FF551F',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
           }}
         >
           <div
             style={{
               width: 18,
               height: 18,
-              borderRadius: 3,
+              borderRadius: 4,
               backgroundColor: `rgb(${hoverColor[0]},${hoverColor[1]},${hoverColor[2]})`,
-              border: '1px solid #fff',
+              border: '1.5px solid #fff',
             }}
           />
+          <span style={{ fontSize: 11, color: '#FF551F', fontWeight: 600 }}>
+            {eyedropperTarget === 'secondary' ? 'Secondary / Hole Key' : 'Primary Key'}:
+          </span>
           <span style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--text-bright)' }}>
             RGB({hoverColor[0]}, {hoverColor[1]}, {hoverColor[2]})
           </span>
@@ -833,6 +1297,119 @@ export const Viewport: React.FC<ViewportProps> = ({
           className={bgMode === 'checkerboard' ? 'checkerboard' : ''}
         >
           <canvas ref={displayCanvasRef} style={{ display: 'block', borderRadius: 4 }} />
+
+          {/* Split-Screen Wipe Interactive Drag Handle */}
+          {isWipeActive && (
+            <div
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                setIsDraggingWipe(true);
+              }}
+              style={{
+                position: 'absolute',
+                top: 0,
+                bottom: 0,
+                left: `${wipePosition * 100}%`,
+                transform: 'translateX(-50%)',
+                width: 20,
+                cursor: 'ew-resize',
+                zIndex: 35,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+              title="Drag to compare Original vs Keyed"
+            >
+              <div
+                style={{
+                  width: 2,
+                  height: '100%',
+                  background: '#FF551F',
+                  boxShadow: '0 0 6px rgba(255, 85, 31, 0.8)',
+                }}
+              />
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: '#17181C',
+                  border: '1.5px solid #FF551F',
+                  borderRadius: 12,
+                  padding: '2px 6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  fontSize: 9,
+                  fontWeight: 700,
+                  color: '#fff',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.6)',
+                  pointerEvents: 'none',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <span>◄ RAW</span>
+                <span style={{ color: '#FF551F' }}>|</span>
+                <span>KEYED ►</span>
+              </div>
+            </div>
+          )}
+
+          {/* 2.5D Light Gizmo */}
+          {isLightActive && frameCanvas && (
+            <div
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                setIsDraggingLight(true);
+              }}
+              style={{
+                position: 'absolute',
+                left: `${(lightPos.x / frameCanvas.width) * 100}%`,
+                top: `${(lightPos.y / frameCanvas.height) * 100}%`,
+                transform: 'translate(-50%, -50%)',
+                zIndex: 36,
+                cursor: isDraggingLight ? 'grabbing' : 'grab',
+                userSelect: 'none',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+              }}
+              title="2.5D Point Light Gizmo: drag around sprite to test dynamic normal shading"
+            >
+              <div
+                style={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: '50%',
+                  background: 'radial-gradient(circle, #FFF7D6 0%, #FFCC00 65%, rgba(255,204,0,0) 100%)',
+                  border: '2px solid #FFFFFF',
+                  boxShadow: '0 0 16px #FFCC00, 0 0 32px rgba(255, 204, 0, 0.6)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Sun size={13} color="#17181C" />
+              </div>
+              <span
+                style={{
+                  fontSize: 9,
+                  fontWeight: 700,
+                  color: '#FFCC00',
+                  background: 'rgba(23, 24, 28, 0.85)',
+                  padding: '1px 5px',
+                  borderRadius: 3,
+                  marginTop: 3,
+                  border: '1px solid rgba(255, 204, 0, 0.3)',
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.5)',
+                }}
+              >
+                Light
+              </span>
+            </div>
+          )}
 
           {/* Interactive Pivot Reticle */}
           {showPivot && pivot && (
@@ -1299,6 +1876,41 @@ export const Viewport: React.FC<ViewportProps> = ({
           )}
         </div>
       )}
+
+      {/* 2D Mesh Overdraw HUD Badge */}
+      {(effectiveShowMesh || meshSettings?.showWireframe || meshSettings?.enabled) && currentMeshStats && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 14,
+            right: 14,
+            zIndex: 10,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            background: 'rgba(23, 24, 28, 0.95)',
+            padding: '5px 12px',
+            borderRadius: 6,
+            border: '1px solid #00e5ff',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+            backdropFilter: 'blur(8px)',
+            fontSize: 11,
+            color: 'var(--text-bright)',
+            fontWeight: 500,
+          }}
+        >
+          <Box size={13} color="#00e5ff" />
+          <span>
+            Mesh: <strong style={{ color: '#00e5ff' }}>{currentMeshStats.vertexCount}v</strong> / {currentMeshStats.triangleCount} tris
+          </span>
+          <span style={{ color: 'var(--border-medium)' }}>|</span>
+          <span style={{ color: '#00f084', fontWeight: 700 }}>
+            🟢 {currentMeshStats.areaSavingsPercent}% Fillrate Saved
+          </span>
+        </div>
+      )}
     </div>
   );
 };
+
+export const Viewport = React.memo(ViewportComponent);

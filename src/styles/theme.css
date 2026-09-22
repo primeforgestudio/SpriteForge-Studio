@@ -1,26 +1,31 @@
 :root {
-  --bg-app: #0b0f0e;
-  --bg-sidebar: #0f1413;
-  --bg-card: #141a18;
-  --bg-card-hover: #19221f;
-  --bg-card-active: #142820;
-  --bg-input: #161c1a;
-  --bg-input-hover: #1c2421;
-  --border-subtle: #1e2724;
-  --border-medium: #273430;
-  --border-active: #00f084;
+  --bg-app: #121316;
+  --bg-sidebar: #17181c;
+  --bg-card: #1f2026;
+  --bg-card-hover: #262730;
+  --bg-card-active: #2b2d37;
+  --bg-input: #25262d;
+  --bg-input-hover: #2b2c35;
+  --border-subtle: #2d2e37;
+  --border-medium: #3a3b47;
+  --border-active: #FF551F;
   
-  --accent-green: #00f084;
-  --accent-green-hover: #10ffa0;
-  --accent-green-glow: rgba(0, 240, 132, 0.25);
-  --accent-cyan: #38bdf8;
-  --accent-blue-active: #15334d;
-  --accent-orange: #f59e0b;
+  --accent-orange: #FF551F;
+  --accent-orange-hover: #ff6e3d;
+  --accent-orange-active: #e64714;
+  
+  /* Semantic mappings to orange theme */
+  --accent-green: #FF551F;
+  --accent-green-hover: #ff6e3d;
+  --accent-green-glow: transparent;
+  --accent-cyan: #FF551F;
+  --accent-mint: #FF551F;
+  --accent-blue-active: #2B2D37;
 
   --text-bright: #ffffff;
-  --text-main: #e2e8f0;
-  --text-muted: #758580;
-  --text-dim: #4e5b56;
+  --text-main: #d8dce2;
+  --text-muted: #8a909d;
+  --text-dim: #565b67;
 
   --radius-xs: 4px;
   --radius-sm: 6px;
@@ -53,20 +58,24 @@ body, html {
   flex-direction: column;
 }
 
-/* Custom Scrollbars */
+/* Custom Scrollbars: hidden by default, visible on panel hover */
 ::-webkit-scrollbar {
   width: 5px;
   height: 5px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--bg-sidebar);
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #25332e;
+  background: transparent;
   border-radius: 4px;
+  transition: background 0.15s ease;
+}
+*:hover::-webkit-scrollbar-thumb {
+  background: #32343e;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #354741;
+  background: #4a4d5c;
 }
 
 /* Buttons */
@@ -84,12 +93,14 @@ button {
   justify-content: center;
   gap: 6px;
   transition: all 0.15s ease;
+  box-shadow: none !important;
 }
 
 button:hover:not(:disabled) {
   background-color: var(--bg-card-hover);
   border-color: var(--border-medium);
   color: var(--text-bright);
+  box-shadow: none !important;
 }
 
 button:active:not(:disabled) {
@@ -101,23 +112,23 @@ button:disabled {
   cursor: not-allowed;
 }
 
-/* Green Primary Action Button */
+/* Primary Action Button - Clean Vibrant Orange (No glow!) */
 button.btn-mint {
-  background-color: var(--accent-green);
-  color: #000000;
-  border: 1px solid var(--accent-green);
-  font-weight: 700;
+  background-color: var(--accent-orange);
+  color: #ffffff;
+  border: 1px solid var(--accent-orange);
+  font-weight: 600;
   border-radius: var(--radius-sm);
-  box-shadow: 0 0 16px var(--accent-green-glow);
+  box-shadow: none !important;
 }
 
 button.btn-mint:hover:not(:disabled) {
-  background-color: var(--accent-green-hover);
-  box-shadow: 0 0 22px rgba(0, 240, 132, 0.4);
-  color: #000000;
+  background-color: var(--accent-orange-hover);
+  color: #ffffff;
+  box-shadow: none !important;
 }
 
-/* Inputs */
+/* Inputs & Numeric Badges */
 input[type="text"],
 input[type="number"] {
   background-color: var(--bg-input);
@@ -129,54 +140,61 @@ input[type="number"] {
   font-size: 12px;
   outline: none;
   transition: border-color 0.15s;
+  box-shadow: none !important;
 }
 
 input[type="text"]:focus,
 input[type="number"]:focus {
-  border-color: var(--accent-cyan);
+  border-color: var(--accent-orange);
+  box-shadow: none !important;
 }
 
-/* Custom range sliders (Cyan neon style from screenshot) */
+/* Clean Flat Range Sliders (No neon glow, orange solid thumb) */
 input[type="range"] {
   -webkit-appearance: none;
-  background: #18221e;
-  height: 5px;
-  border-radius: 3px;
+  appearance: none;
+  background: #2d2e37;
+  height: 4px;
+  border-radius: 2px;
   outline: none;
   cursor: pointer;
+  box-shadow: none !important;
 }
 
 input[type="range"]::-webkit-slider-runnable-track {
-  height: 5px;
-  border-radius: 3px;
+  height: 4px;
+  border-radius: 2px;
+  background: #2d2e37;
+  box-shadow: none !important;
 }
 
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
+  appearance: none;
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: var(--accent-cyan);
-  border: 2px solid #0b0f0e;
+  background: var(--accent-orange);
+  border: 2px solid #17181c;
   cursor: pointer;
-  box-shadow: 0 0 10px rgba(56, 189, 248, 0.7);
-  margin-top: -4.5px;
-  transition: transform 0.1s, box-shadow 0.1s;
+  box-shadow: none !important;
+  margin-top: -5px;
+  transition: transform 0.1s;
 }
 
 input[type="range"]::-webkit-slider-thumb:hover {
-  transform: scale(1.2);
-  box-shadow: 0 0 12px rgba(56, 189, 248, 0.9);
+  transform: scale(1.15);
+  box-shadow: none !important;
 }
 
 /* Checkerboard background */
 .checkerboard {
-  background-color: #121816;
+  background-color: #141519;
   background-image: 
-    linear-gradient(45deg, #18201d 25%, transparent 25%), 
-    linear-gradient(-45deg, #18201d 25%, transparent 25%), 
-    linear-gradient(45deg, transparent 75%, #18201d 75%), 
-    linear-gradient(-45deg, transparent 75%, #18201d 75%);
+    linear-gradient(45deg, #1b1d22 25%, transparent 25%), 
+    linear-gradient(-45deg, #1b1d22 25%, transparent 25%), 
+    linear-gradient(45deg, transparent 75%, #1b1d22 75%), 
+    linear-gradient(-45deg, transparent 75%, #1b1d22 75%);
   background-size: 14px 14px;
   background-position: 0 0, 0 7px, 7px -7px, -7px 0px;
 }
@@ -219,7 +237,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: #090c0b;
+  background: #17181c;
   padding: 12px;
   gap: 12px;
   overflow: hidden;
@@ -246,7 +264,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
   background: var(--border-subtle);
   cursor: col-resize;
   flex-shrink: 0;
-  transition: background 0.15s ease, box-shadow 0.15s ease;
+  transition: background 0.15s ease;
   z-index: 20;
   position: relative;
 }
@@ -267,8 +285,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
 
 .resizer-handle:hover,
 .resizer-handle.resizing {
-  background: var(--accent-green);
-  box-shadow: 0 0 10px var(--accent-green-glow);
+  background: var(--accent-orange);
 }
 
 .resizer-handle:hover::after,
@@ -284,11 +301,11 @@ body.resizing-active {
 
 /* Section Header text */
 .sidebar-section-title {
-  font-size: 10px;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 600;
   text-transform: uppercase;
-  color: var(--text-muted);
-  letter-spacing: 0.8px;
+  color: var(--text-bright);
+  letter-spacing: 0.5px;
   margin-bottom: 8px;
   display: flex;
   align-items: center;
@@ -328,4 +345,3 @@ body.resizing-active {
 .animate-spin {
   animation: spin 1s linear infinite;
 }
-

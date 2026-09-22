@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { AppMode, BackgroundMode, SpriteTransform, AnimationTrack, ExportScope } from './core/types';
+import { AppMode, BackgroundMode, SpriteTransform, AnimationTrack, ExportScope, PackedFrameItem } from './core/types';
 import { VideoLoader } from './core/videoLoader';
 import { ImageProcessor } from './core/imageProcessor';
 import { AtlasBuilder } from './core/atlasBuilder';
@@ -7,9 +7,14 @@ import { SpriteProcessor } from './core/spriteProcessor';
 import { LoopDetector } from './core/loopDetector';
 import { BoundingCrop, StatePreset } from './core/boundingCrop';
 import { GodotExporter } from './core/godotExporter';
+import { MeshGenerator } from './core/meshGenerator';
+import { DuplicateEliminator } from './core/duplicateEliminator';
+import { PngQuantizer, Png8Encoder } from './core/pngQuantizer';
+import { PbrGenerator } from './core/pbrGenerator';
 import { TemporalProcessor } from './core/temporalProcessor';
 import { NormalMapGenerator } from './core/normalMapGenerator';
 import { GifEncoder } from './core/gifEncoder';
+import { ExportManager, ExportFileItem } from './core/exportManager';
 import {
   StorageManager,
   DEFAULT_KEYING,
@@ -17,6 +22,8 @@ import {
   DEFAULT_SPRITES,
   DEFAULT_BG_PRESETS,
 } from './core/storage';
+import { WebGLKeyer } from './core/webglKeyer';
+import { FolderCheck } from 'lucide-react';
 import { Header } from './components/Header';
 import { LeftSidebar, LoadedFileItem } from './components/LeftSidebar';
 import { Viewport } from './components/Viewport';
@@ -57,8 +64,11 @@ export const App: React.FC = () => {
 
   // Viewport & Eyedropper
   const [isEyedropperActive, setIsEyedropperActive] = useState(false);
+  const [eyedropperTarget, setEyedropperTarget] = useState<'primary' | 'secondary'>('primary');
   const [viewportCanvas, setViewportCanvas] = useState<HTMLCanvasElement | null>(null);
   const viewportCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const webglCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const webglKeyerRef = useRef<WebGLKeyer | null>(null);
   const [renderTrigger, setRenderTrigger] = useState(0);
 
   // Timeline
@@ -73,21 +83,36 @@ export const App: React.FC = () => {
   const [statePreset, setStatePreset] = useState<StatePreset>('standard');
   const [isAutoCropping, setIsAutoCropping] = useState(false);
   const [exportFilename, setExportFilename] = useState('character_atlas');
+  const [exportDestinationDir, setExportDestinationDir] = useState<string>(() => {
+    return ExportManager.getLastExportDirectory() || '';
+  });
+  const [exportToast, setExportToast] = useState<string | null>(null);
   const [showMask, setShowMask] = useState(false);
   const [showPivot, setShowPivot] = useState(false);
   const [showGarbageMatte, setShowGarbageMatte] = useState(false);
   const [showColliders, setShowColliders] = useState(false);
   const [onionGhosts, setOnionGhosts] = useState<{ prev?: HTMLCanvasElement | null; next?: HTMLCanvasElement | null } | null>(null);
   const [generateNormalMap, setGenerateNormalMap] = useState(false);
+  const [generatePbrPack, setGeneratePbrPack] = useState(false);
+  const [generateMask, setGenerateMask] = useState(false);
   const [isExportingGif, setIsExportingGif] = useState(false);
+  const [rawFrameCanvas, setRawFrameCanvas] = useState<HTMLCanvasElement | null>(null);
+  const rawFrameCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  const handleSelectDestinationDir = async () => {
+    const chosen = await ExportManager.selectExportDirectory(exportDestinationDir);
+    if (chosen) {
+      setExportDestinationDir(chosen);
+    }
+  };
 
   // Panel Resizing State
   const [leftWidth, setLeftWidth] = useState<number>(() => {
-    const saved = localStorage.getItem('converter_atlas_left_w');
+    const saved = localStorage.getItem('spriteforge_left_w');
     return saved ? Math.min(520, Math.max(220, Number(saved))) : 290;
   });
   const [rightWidth, setRightWidth] = useState<number>(() => {
-    const saved = localStorage.getItem('converter_atlas_right_w');
+    const saved = localStorage.getItem('spriteforge_right_w');
     return saved ? Math.min(550, Math.max(240, Number(saved))) : 300;
   });
   const [isResizingLeft, setIsResizingLeft] = useState(false);
@@ -109,7 +134,7 @@ export const App: React.FC = () => {
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
       const finalWidth = Math.min(520, Math.max(220, upEvent.clientX));
-      localStorage.setItem('converter_atlas_left_w', String(finalWidth));
+      localStorage.setItem('spriteforge_left_w', String(finalWidth));
     };
 
     window.addEventListener('mousemove', onMouseMove);
@@ -132,7 +157,7 @@ export const App: React.FC = () => {
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
       const finalWidth = Math.min(550, Math.max(240, window.innerWidth - upEvent.clientX));
-      localStorage.setItem('converter_atlas_right_w', String(finalWidth));
+      localStorage.setItem('spriteforge_right_w', String(finalWidth));
     };
 
     window.addEventListener('mousemove', onMouseMove);
@@ -338,12 +363,62 @@ export const App: React.FC = () => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    // Preserve unkeyed raw frame for Split-Screen Wipe
+    if (
+      !rawFrameCanvasRef.current ||
+      rawFrameCanvasRef.current.width !== rawData.width ||
+      rawFrameCanvasRef.current.height !== rawData.height
+    ) {
+      rawFrameCanvasRef.current = document.createElement('canvas');
+      rawFrameCanvasRef.current.width = rawData.width;
+      rawFrameCanvasRef.current.height = rawData.height;
+    }
+    const rawCtx = rawFrameCanvasRef.current.getContext('2d');
+    if (rawCtx) {
+      rawCtx.putImageData(rawData, 0, 0);
+      setRawFrameCanvas(rawFrameCanvasRef.current);
+    }
+
     // Fast-path: When chroma key and masks are not active, skip all array allocation and processing!
     if (!keyingSettings.enabled && !showMask && !keyingSettings.garbageMatte?.enabled) {
       ctx.putImageData(rawData, 0, 0);
       setViewportCanvas(canvas);
       setRenderTrigger((v) => (v + 1) % 1000000);
       return;
+    }
+
+    const keyHash = JSON.stringify({ ...keyingSettings, showMask });
+
+    const cachedKeyed = loader.getKeyedFrame(targetFrame, keyHash);
+    if (cachedKeyed) {
+      ctx.putImageData(cachedKeyed, 0, 0);
+      setViewportCanvas(canvas);
+      setRenderTrigger((v) => (v + 1) % 1000000);
+      return;
+    }
+
+    // Hardware GPU Chroma Key Render with WebGL (< 0.1ms)
+    if (!webglCanvasRef.current) {
+      webglCanvasRef.current = document.createElement('canvas');
+      webglKeyerRef.current = new WebGLKeyer(webglCanvasRef.current);
+    }
+    if (webglKeyerRef.current) {
+      const ok = webglKeyerRef.current.render(
+        rawData,
+        rawData.width,
+        rawData.height,
+        keyingSettings,
+        showMask,
+        'checkerboard',
+        [0, 0, 0]
+      );
+      if (ok) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(webglKeyerRef.current.getCanvas(), 0, 0);
+        setViewportCanvas(canvas);
+        setRenderTrigger((v) => (v + 1) % 1000000);
+        return;
+      }
     }
 
     const processedData = new ImageData(
@@ -356,6 +431,7 @@ export const App: React.FC = () => {
     if (showMask) {
       ImageProcessor.convertToAlphaMask(processedData);
     }
+    loader.setKeyedFrame(targetFrame, keyHash, processedData);
     ctx.putImageData(processedData, 0, 0);
 
     setViewportCanvas(canvas);
@@ -368,7 +444,12 @@ export const App: React.FC = () => {
     renderAtlasFrame(currentFrame, false);
   }, [renderAtlasFrame, currentFrame, isPlaying]);
 
-  // Unified Playback Loop (Both Video and PNG Sequences)
+  // Clear keyed cache when keying parameters change so fresh keyed frames are generated
+  useEffect(() => {
+    atlasLoaderRef.current.clearKeyedCache();
+  }, [keyingSettings, showMask]);
+
+  // Unified Deterministic Playback Loop
   useEffect(() => {
     if (mode !== 'atlas') return;
     const loader = atlasLoaderRef.current;
@@ -381,149 +462,269 @@ export const App: React.FC = () => {
       return;
     }
 
-    // CASE A: PNG Sequence Mode (RAF software loop)
-    if (loader.isSequence || !loader.videoElement) {
-      let animId: number;
-      let lastTime = performance.now();
-      const frameDuration = 1000 / (loader.metadata.fps || 30);
+    const fps = loader.metadata.fps || 30;
+    const frameDuration = 1000 / fps;
+    let isCancelled = false;
+    let animId: number;
+    let videoFrameHandle: any;
 
-      const tickSequence = (now: number) => {
+    let currentF = currentFrameRef.current;
+    if (currentF < cropStart || currentF >= cropEnd) {
+      currentF = cropStart;
+      setCurrentFrame(cropStart);
+    }
+
+    const keyHash = JSON.stringify({ ...keyingSettings, showMask });
+    const video = loader.videoElement;
+
+    // Check if range [cropStart, cropEnd] is already completely in memory
+    const isRangeFullyCached = () => {
+      for (let i = cropStart; i <= cropEnd; i++) {
+        if (!loader.getCachedFrame(i)) return false;
+      }
+      return true;
+    };
+
+    // --- IN-MEMORY CACHE PLAYBACK ---
+    // Zero seeks, zero decoding overhead, monotonic performance.now() ticks, instant 0.01ms loop wrap
+    const runCachePlayback = () => {
+      let lastTime = performance.now();
+
+      const cacheTick = (now: number) => {
         if (isCancelled) return;
         const elapsed = now - lastTime;
+
         if (elapsed >= frameDuration) {
           const advance = Math.floor(elapsed / frameDuration);
           lastTime = now - (elapsed % frameDuration);
-          setCurrentFrame((prev) => {
-            let next = prev + advance;
-            if (next > cropEnd) {
-              if (isLooping) {
-                next = cropStart;
-              } else {
-                setIsPlaying(false);
-                return cropEnd;
-              }
-            }
-            return next;
-          });
-        }
-        animId = requestAnimationFrame(tickSequence);
-      };
 
-      animId = requestAnimationFrame(tickSequence);
-      return () => {
-        isCancelled = true;
-        cancelAnimationFrame(animId);
-      };
-    }
-
-    // CASE B: Video File Mode (Hardware Accelerated Video Playback)
-    const video = loader.videoElement;
-    const fps = loader.metadata.fps || 30;
-
-    const startSec = Math.max(0.001, cropStart / fps);
-    const endSec = Math.min(video.duration || Infinity, (cropEnd + 0.4) / fps);
-
-    // Start video playback from current playhead position
-    const currentSec = Math.max(0, currentFrameRef.current / fps);
-    if (currentSec >= endSec || currentSec < startSec - 0.05) {
-      video.currentTime = startSec;
-    } else if (Math.abs(video.currentTime - currentSec) > 0.08) {
-      video.currentTime = currentSec;
-    }
-
-    let isCancelled = false;
-    let animId: number;
-    let isRewinding = false;
-
-    const onSeeked = () => {
-      isRewinding = false;
-      if (!isCancelled && video.paused) {
-        video.play().catch(() => {});
-      }
-    };
-    video.addEventListener('seeked', onSeeked);
-
-    const playPromise = video.play();
-    if (playPromise) {
-      playPromise.catch((e) => {
-        console.warn('Video play interrupted or failed:', e);
-      });
-    }
-
-    const onVideoFrame = () => {
-      if (isCancelled) return;
-
-      const time = video.currentTime;
-
-      // Check if we hit the loop boundary or end of video
-      if (time >= endSec - 0.02 || video.ended) {
-        if (isLooping) {
-          if (!isRewinding) {
-            isRewinding = true;
-            video.currentTime = startSec;
-            setCurrentFrame(cropStart);
-            if (video.paused || video.ended) {
-              video.play().catch(() => {});
+          let nextFrame = currentF + advance;
+          if (nextFrame > cropEnd) {
+            if (isLooping) {
+              nextFrame = cropStart;
+            } else {
+              setIsPlaying(false);
+              setCurrentFrame(cropEnd);
+              renderAtlasFrame(cropEnd, false);
+              return;
             }
           }
+
+          currentF = nextFrame;
+          setCurrentFrame(currentF);
+
+          // Instant render from memory cache
+          if (
+            !viewportCanvasRef.current ||
+            viewportCanvasRef.current.width !== loader.metadata.width ||
+            viewportCanvasRef.current.height !== loader.metadata.height
+          ) {
+            viewportCanvasRef.current = document.createElement('canvas');
+            viewportCanvasRef.current.width = loader.metadata.width;
+            viewportCanvasRef.current.height = loader.metadata.height;
+          }
+          const canvas = viewportCanvasRef.current;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            const keyed = loader.getKeyedFrame(currentF, keyHash);
+            if (keyed) {
+              ctx.putImageData(keyed, 0, 0);
+            } else {
+              let raw = loader.getCachedFrame(currentF);
+              if (!raw) {
+                // Graceful fallback to nearest cached frame so it never flashes blank
+                for (let d = 1; d <= 6; d++) {
+                  raw = loader.getCachedFrame(currentF - d) || loader.getCachedFrame(currentF + d);
+                  if (raw) break;
+                }
+              }
+              if (raw) {
+                if (!keyingSettings.enabled && !showMask && !keyingSettings.garbageMatte?.enabled) {
+                  ctx.putImageData(raw, 0, 0);
+                } else {
+                  if (!webglCanvasRef.current) {
+                    webglCanvasRef.current = document.createElement('canvas');
+                    webglKeyerRef.current = new WebGLKeyer(webglCanvasRef.current);
+                  }
+                  if (webglKeyerRef.current) {
+                    webglKeyerRef.current.render(
+                      raw,
+                      raw.width,
+                      raw.height,
+                      keyingSettings,
+                      showMask,
+                      'checkerboard',
+                      [0, 0, 0]
+                    );
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(webglKeyerRef.current.getCanvas(), 0, 0);
+                  }
+                }
+              }
+            }
+            setViewportCanvas(canvas);
+            setRenderTrigger((v) => (v + 1) % 1000000);
+          }
+        }
+
+        animId = requestAnimationFrame(cacheTick);
+      };
+
+      animId = requestAnimationFrame(cacheTick);
+    };
+
+    // --- HARDWARE VIDEO PLAYBACK (MP4/MOV/AVI/WEBM) ---
+    if (video && !loader.isSequence) {
+      let isLoopSeeking = false;
+      const startSec = cropStart / fps;
+      const endSec = cropEnd / fps;
+
+      if (video.currentTime < startSec - 0.05 || video.currentTime >= endSec - 0.03 || video.ended) {
+        video.currentTime = startSec;
+        currentF = cropStart;
+        currentFrameRef.current = cropStart;
+        setCurrentFrame(cropStart);
+      }
+
+      const startPlayback = () => {
+        const p = video.play();
+        if (p !== undefined) {
+          p.catch(() => {
+            const onReady = () => {
+              video.removeEventListener('canplay', onReady);
+              video.play().catch(() => {});
+            };
+            video.addEventListener('canplay', onReady, { once: true });
+          });
+        }
+      };
+      startPlayback();
+
+      if (!webglCanvasRef.current) {
+        webglCanvasRef.current = document.createElement('canvas');
+        webglKeyerRef.current = new WebGLKeyer(webglCanvasRef.current);
+      }
+      const keyer = webglKeyerRef.current;
+
+      const triggerLoop = () => {
+        if (isLoopSeeking) return;
+        if (isLooping) {
+          isLoopSeeking = true;
+          video.currentTime = startSec;
+          currentF = cropStart;
+          currentFrameRef.current = cropStart;
+          setCurrentFrame(cropStart);
+
+          const resume = () => {
+            video.removeEventListener('seeked', resume);
+            isLoopSeeking = false;
+            if (!isCancelled && isPlaying) video.play().catch(() => {});
+          };
+          video.addEventListener('seeked', resume, { once: true });
+
+          setTimeout(() => {
+            isLoopSeeking = false;
+            if (!isCancelled && isPlaying) video.play().catch(() => {});
+          }, 150);
         } else {
-          // Loop is disabled: stop cleanly at cropEnd
           setIsPlaying(false);
+          video.pause();
           setCurrentFrame(cropEnd);
+        }
+      };
+
+      const onVideoEnded = () => {
+        if (!isCancelled) triggerLoop();
+      };
+      video.addEventListener('ended', onVideoEnded);
+
+      const onVideoFrame = () => {
+        if (isCancelled) return;
+
+        const currentSec = video.currentTime;
+        const currentCalcFrame = Math.round(currentSec * fps);
+
+        // Check loop boundary: frame hits cropEnd, or currentTime reaches endSec, or EOF ended
+        const isAtEnd =
+          currentCalcFrame >= cropEnd ||
+          currentSec >= (endSec - 0.03) ||
+          video.ended;
+
+        if (!isLoopSeeking && isAtEnd) {
+          triggerLoop();
+          animId = requestAnimationFrame(onVideoFrame);
           return;
         }
-      } else if (!isRewinding) {
-        const frame = Math.max(cropStart, Math.min(cropEnd, Math.round(time * fps)));
-        setCurrentFrame(frame);
 
-        // Render playing frame immediately to viewport
-        if (
-          !viewportCanvasRef.current ||
-          viewportCanvasRef.current.width !== video.videoWidth ||
-          viewportCanvasRef.current.height !== video.videoHeight
-        ) {
-          viewportCanvasRef.current = document.createElement('canvas');
-          viewportCanvasRef.current.width = video.videoWidth;
-          viewportCanvasRef.current.height = video.videoHeight;
+        if (isLoopSeeking) {
+          animId = requestAnimationFrame(onVideoFrame);
+          return;
         }
 
-        const canvas = viewportCanvasRef.current;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          if (!keyingSettings.enabled && !showMask && !keyingSettings.garbageMatte?.enabled) {
+        const f = Math.max(cropStart, Math.min(cropEnd, currentCalcFrame));
+        if (f !== currentFrameRef.current) {
+          currentFrameRef.current = f;
+          setCurrentFrame(f);
+        }
+
+        // WebGL High-Performance GPU Chroma Key rendering (< 0.1ms per frame!)
+        if (keyer && (keyingSettings.enabled || showMask || keyingSettings.garbageMatte?.enabled)) {
+          const ok = keyer.render(
+            video,
+            video.videoWidth,
+            video.videoHeight,
+            keyingSettings,
+            showMask,
+            'checkerboard',
+            [0, 0, 0]
+          );
+          if (ok) {
+            setViewportCanvas(keyer.getCanvas());
+            setRenderTrigger((v) => (v + 1) % 1000000);
+          }
+        } else {
+          // Direct hardware canvas blit when chroma key is off
+          if (
+            !viewportCanvasRef.current ||
+            viewportCanvasRef.current.width !== video.videoWidth ||
+            viewportCanvasRef.current.height !== video.videoHeight
+          ) {
+            viewportCanvasRef.current = document.createElement('canvas');
+            viewportCanvasRef.current.width = video.videoWidth;
+            viewportCanvasRef.current.height = video.videoHeight;
+          }
+          const canvas = viewportCanvasRef.current;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
             ctx.drawImage(video, 0, 0);
             setViewportCanvas(canvas);
             setRenderTrigger((v) => (v + 1) % 1000000);
-          } else {
-            const raw = loader.captureCurrentPlayingFrame();
-            if (raw) {
-              ImageProcessor.applyChromaKey(raw, keyingSettings, true);
-              if (showMask) {
-                ImageProcessor.convertToAlphaMask(raw);
-              }
-              ctx.putImageData(raw, 0, 0);
-              setViewportCanvas(canvas);
-              setRenderTrigger((v) => (v + 1) % 1000000);
-            }
           }
         }
-      }
 
-      // If video got paused unexpectedly (e.g. from seek or EOF), resume play
-      if (video.paused && !video.ended && !isRewinding) {
-        video.play().catch(() => {});
-      }
+        animId = requestAnimationFrame(onVideoFrame);
+      };
 
       animId = requestAnimationFrame(onVideoFrame);
-    };
 
-    animId = requestAnimationFrame(onVideoFrame);
+      return () => {
+        isCancelled = true;
+        video.removeEventListener('ended', onVideoEnded);
+        if (animId) {
+          cancelAnimationFrame(animId);
+        }
+        if (!video.paused) {
+          video.pause();
+        }
+      };
+    }
+
+    // --- SEQUENCE IN-MEMORY PLAYBACK (PNG Sequence / Image List) ---
+    runCachePlayback();
 
     return () => {
       isCancelled = true;
-      video.removeEventListener('seeked', onSeeked);
       if (animId) cancelAnimationFrame(animId);
-      video.pause();
     };
   }, [isPlaying, isLooping, mode, cropStart, cropEnd, keyingSettings, showMask]);
 
@@ -560,14 +761,14 @@ export const App: React.FC = () => {
 
   // Generate Onion Skinning Ghosts (coral red for previous frame, cyan for next frame)
   useEffect(() => {
-    if (!atlasSettings.enableOnionSkin || mode !== 'atlas') {
-      setOnionGhosts(null);
+    if (isPlaying || !atlasSettings.enableOnionSkin || mode !== 'atlas') {
+      setOnionGhosts((prev) => (prev !== null ? null : prev));
       return;
     }
 
     const loader = atlasLoaderRef.current;
     if (loader.metadata.totalFrames <= 1 || markers.length === 0) {
-      setOnionGhosts(null);
+      setOnionGhosts((prev) => (prev !== null ? null : prev));
       return;
     }
 
@@ -642,7 +843,7 @@ export const App: React.FC = () => {
   // Update Atlas Preview (Fast & Downsampled for UI thumbnail)
   const isUpdatingAtlasRef = useRef(false);
   const updateAtlasPreview = useCallback(async () => {
-    if (mode !== 'atlas' || isUpdatingAtlasRef.current) return;
+    if (mode !== 'atlas' || isUpdatingAtlasRef.current || atlasLoaderRef.current.isVideoPlaying()) return;
     const loader = atlasLoaderRef.current;
     if (loader.metadata.totalFrames <= 0 || markers.length === 0) return;
 
@@ -664,6 +865,7 @@ export const App: React.FC = () => {
       const frameCanvases: HTMLCanvasElement[] = [];
 
       for (const frameIdx of markers) {
+        if (loader.isVideoPlaying()) return;
         const raw = await loader.getFrame(frameIdx);
         if (raw) {
           // 1. Downscale raw frame first with bounding cropBox if active
@@ -719,7 +921,44 @@ export const App: React.FC = () => {
         );
       }
 
-      const atlas = AtlasBuilder.createAtlasCanvas(finalFrames, cols, rows, pfw, pfh);
+      // 6. In-Place Centering / Root Motion across sequence
+      if (atlasSettings.enableInPlace && finalFrames.length > 1) {
+        const inPlaceRes = TemporalProcessor.applyInPlaceCentering(
+          finalFrames,
+          atlasSettings.inPlaceLockAxis ?? 'x'
+        );
+        finalFrames = inPlaceRes.alignedCanvases;
+      }
+
+      // 7. Duplicate Frame Eliminator
+      let framesForAtlas = finalFrames;
+      if (atlasSettings.eliminateDuplicates && finalFrames.length > 1) {
+        const dedup = DuplicateEliminator.eliminateDuplicates(
+          finalFrames,
+          atlasSettings.duplicateThreshold ?? 0.992
+        );
+        framesForAtlas = dedup.uniqueFrames;
+      }
+
+      let atlas: HTMLCanvasElement;
+      if (atlasSettings.layoutMode === 'advanced') {
+        const packRes = AtlasBuilder.packFramesAdvanced(
+          framesForAtlas,
+          atlasSettings.packPadding ?? 2
+        );
+        atlas = packRes.canvas;
+      } else {
+        const previewCols = Math.max(1, Math.min(atlasSettings.columns, framesForAtlas.length));
+        const previewRows = Math.ceil(framesForAtlas.length / previewCols);
+        atlas = AtlasBuilder.createAtlasCanvas(framesForAtlas, previewCols, previewRows, pfw, pfh);
+      }
+
+      // 8. PNG-8 NeuQuant Palette Preview
+      if (atlasSettings.enablePng8) {
+        const quant = PngQuantizer.quantizeCanvas(atlas, 256, true);
+        atlas = quant.previewCanvas;
+      }
+
       setAtlasCanvas(atlas);
     } finally {
       isUpdatingAtlasRef.current = false;
@@ -777,10 +1016,8 @@ export const App: React.FC = () => {
         setMarkers(initialMarkers);
         renderAtlasFrame(0);
 
-        // Preload keyframe markers in background so atlas generation is instant
-        loader.preloadMarkers(initialMarkers).then(() => {
-          updateAtlasPreview();
-        });
+        // Refresh atlas preview
+        updateAtlasPreview();
 
         // Generate thumbnail for file card in left sidebar
         const firstFrame = await loader.getFrame(0);
@@ -1036,6 +1273,13 @@ export const App: React.FC = () => {
                 TemporalProcessor.applyGroundSnap(c, bottomYs[i], targetBaselineY)
               );
             }
+            if (atlasSettings.enableInPlace && finalTrackFrames.length > 1) {
+              const inPlaceRes = TemporalProcessor.applyInPlaceCentering(
+                finalTrackFrames,
+                atlasSettings.inPlaceLockAxis ?? 'x'
+              );
+              finalTrackFrames = inPlaceRes.alignedCanvases;
+            }
 
             const startIdx = allProcessedCanvases.length;
             const frameIndices: number[] = [];
@@ -1056,9 +1300,6 @@ export const App: React.FC = () => {
           const cols = Math.max(1, Math.min(16, atlasSettings.columns));
           const rows = Math.ceil(totalFrames / cols);
 
-          const masterAtlas = AtlasBuilder.createAtlasCanvas(allProcessedCanvases, cols, rows, fw, fh);
-          const pngBlob = await AtlasBuilder.canvasToBlob(masterAtlas);
-
           const cleanName = (exportFilename.trim() || 'character')
             .replace(/\.[^/.]+$/, '')
             .replace(/[^a-zA-Z0-9_-]/g, '_') || 'character';
@@ -1066,23 +1307,112 @@ export const App: React.FC = () => {
           const tresFilename = `${cleanName}_master_frames.tres`;
           const asepriteFilename = `${cleanName}_master_aseprite.json`;
           const jsonFilename = `${cleanName}_master_frames.json`;
+          const spineAtlasFilename = `${cleanName}_master.atlas`;
 
-          AtlasBuilder.triggerDownload(pngBlob, pngFilename);
+          let masterAtlas: HTMLCanvasElement;
+          let masterPackedFrames: PackedFrameItem[] | undefined = undefined;
 
-          if (generateNormalMap) {
+          if (atlasSettings.layoutMode === 'advanced') {
+            const frameNames: string[] = [];
+            tracksMeta.forEach((track) => {
+              track.frameIndices.forEach((_, localIdx) => {
+                frameNames.push(`${track.name}_${localIdx}`);
+              });
+            });
+            const packRes = AtlasBuilder.packFramesAdvanced(
+              allProcessedCanvases,
+              atlasSettings.packPadding ?? 2,
+              frameNames
+            );
+            masterAtlas = packRes.canvas;
+            masterPackedFrames = packRes.packedFrames;
+          } else {
+            masterAtlas = AtlasBuilder.createAtlasCanvas(allProcessedCanvases, cols, rows, fw, fh);
+          }
+
+          let pngBlob: Blob;
+          if (atlasSettings.enablePng8) {
+            const quant = PngQuantizer.quantizeCanvas(masterAtlas, 256, true);
+            pngBlob = await Png8Encoder.encodeToBlob(quant);
+          } else {
+            pngBlob = await AtlasBuilder.canvasToBlob(masterAtlas);
+          }
+
+          const filesToExport: ExportFileItem[] = [];
+          filesToExport.push({ name: pngFilename, data: pngBlob });
+
+          // Spine / libGDX .atlas for Master Set
+          if (atlasSettings.layoutMode === 'advanced' && masterPackedFrames) {
+            const spineAtlasText = AtlasBuilder.createSpineAtlas(
+              masterPackedFrames,
+              pngFilename,
+              masterAtlas.width,
+              masterAtlas.height
+            );
+            filesToExport.push({ name: spineAtlasFilename, text: spineAtlasText, isText: true });
+          }
+
+          // Export 2D Normal Map or Complete 2D PBR Pack
+          if (generatePbrPack || generateNormalMap) {
             const normalCanvas = NormalMapGenerator.generateNormalMap(masterAtlas, 2.5);
             const normalBlob = await AtlasBuilder.canvasToBlob(normalCanvas);
-            AtlasBuilder.triggerDownload(normalBlob, `${cleanName}_master_normal.png`);
+            filesToExport.push({ name: `${cleanName}_master_normal.png`, data: normalBlob });
+
+            if (generatePbrPack) {
+              const roughnessCanvas = PbrGenerator.generateRoughnessMap(masterAtlas, atlasSettings.roughnessGloss ?? 50);
+              const roughnessBlob = await AtlasBuilder.canvasToBlob(roughnessCanvas);
+              filesToExport.push({ name: `${cleanName}_master_roughness.png`, data: roughnessBlob });
+
+              const emissionCanvas = PbrGenerator.generateEmissionMap(masterAtlas, atlasSettings.emissionThreshold ?? 180, 1.5);
+              const emissionBlob = await AtlasBuilder.canvasToBlob(emissionCanvas);
+              filesToExport.push({ name: `${cleanName}_master_emission.png`, data: emissionBlob });
+            }
+          }
+
+          // Export Silhouette Alpha Mask (_mask.png) if requested
+          if (generateMask) {
+            const maskCanvas = ImageProcessor.canvasToAlphaMask(masterAtlas);
+            const maskBlob = await AtlasBuilder.canvasToBlob(maskCanvas);
+            filesToExport.push({ name: `${cleanName}_master_mask.png`, data: maskBlob });
           }
 
           // Godot 4 Multi-Animation SpriteFrames (.tres)
           const tresString = GodotExporter.generateMultiTrackSpriteFramesTres(
             pngFilename,
             { ...atlasSettings, columns: cols, rows },
-            tracksMeta
+            tracksMeta,
+            masterPackedFrames
           );
-          const tresBlob = new Blob([tresString], { type: 'text/plain' });
-          AtlasBuilder.triggerDownload(tresBlob, tresFilename);
+          filesToExport.push({ name: tresFilename, text: tresString, isText: true });
+
+          // 2D Mesh & Overdraw Optimizer
+          let masterSampleMesh: any = undefined;
+          if (atlasSettings.meshSettings?.enabled) {
+            const sampleFrame = allProcessedCanvases[0] || viewportCanvasRef.current;
+            if (sampleFrame) {
+              masterSampleMesh = MeshGenerator.generateMesh(sampleFrame, atlasSettings.meshSettings);
+              const spineAttachment = MeshGenerator.generateSpineAttachment(cleanName, masterSampleMesh, fw, fh);
+              const meshJson = {
+                generator: 'SpriteForge Studio',
+                version: '2.0',
+                name: cleanName,
+                vertexCount: masterSampleMesh.vertexCount,
+                triangleCount: masterSampleMesh.triangleCount,
+                areaSavingsPercent: masterSampleMesh.areaSavingsPercent,
+                mesh: {
+                  vertices: masterSampleMesh.vertices,
+                  uvs: masterSampleMesh.uvs,
+                  indices: masterSampleMesh.indices,
+                },
+                spineAttachment,
+              };
+              filesToExport.push({
+                name: `${cleanName}_mesh.json`,
+                text: JSON.stringify(meshJson, null, 2),
+                isText: true,
+              });
+            }
+          }
 
           // Godot 4 CharacterBody2D Scene (.tscn) if enabled
           if (atlasSettings.collisionSettings?.generateTscn ?? true) {
@@ -1092,22 +1422,22 @@ export const App: React.FC = () => {
               cleanName,
               tresFilename,
               { ...atlasSettings, columns: cols, rows },
-              firstTrackName
+              firstTrackName,
+              masterSampleMesh
             );
-            const tscnBlob = new Blob([tscnString], { type: 'text/plain' });
-            AtlasBuilder.triggerDownload(tscnBlob, tscnFilename);
+            filesToExport.push({ name: tscnFilename, text: tscnString, isText: true });
           }
 
           // Aseprite JSON with frameTags
           const asepriteMeta = AtlasBuilder.createMultiTrackAsepriteJson(
             { ...atlasSettings, columns: cols, rows },
             tracksMeta,
-            pngFilename
+            pngFilename,
+            masterPackedFrames,
+            masterAtlas.width,
+            masterAtlas.height
           );
-          const asepriteBlob = new Blob([JSON.stringify(asepriteMeta, null, 2)], {
-            type: 'application/json',
-          });
-          AtlasBuilder.triggerDownload(asepriteBlob, asepriteFilename);
+          filesToExport.push({ name: asepriteFilename, text: JSON.stringify(asepriteMeta, null, 2), isText: true });
 
           // Standard Metadata JSON
           const masterJson = {
@@ -1115,6 +1445,7 @@ export const App: React.FC = () => {
             version: '2.0',
             name: cleanName,
             scope: 'master_set',
+            layoutMode: atlasSettings.layoutMode || 'grid',
             frameWidth: fw,
             frameHeight: fh,
             columns: cols,
@@ -1123,10 +1454,18 @@ export const App: React.FC = () => {
             pivot: atlasSettings.pivot || { x: 0.5, y: 0.95 },
             tracks: tracksMeta,
           };
-          const jsonBlob = new Blob([JSON.stringify(masterJson, null, 4)], {
-            type: 'application/json',
-          });
-          AtlasBuilder.triggerDownload(jsonBlob, jsonFilename);
+          filesToExport.push({ name: jsonFilename, text: JSON.stringify(masterJson, null, 4), isText: true });
+
+          const exportRes = await ExportManager.saveExportPackage(exportDestinationDir, cleanName, filesToExport);
+          if (exportRes.canceled) return;
+          if (!exportRes.success) {
+            alert(`Export failed: ${exportRes.error || 'Unknown error'}`);
+            return;
+          }
+          const lastDir = ExportManager.getLastExportDirectory();
+          if (lastDir) setExportDestinationDir(lastDir);
+          setExportToast(`Created folder "${cleanName}" with ${filesToExport.length} files`);
+          setTimeout(() => setExportToast(null), 4500);
           return;
         }
 
@@ -1188,8 +1527,16 @@ export const App: React.FC = () => {
           );
         }
 
-        const finalAtlas = AtlasBuilder.createAtlasCanvas(finalFrames, cols, rows, fw, fh);
-        const pngBlob = await AtlasBuilder.canvasToBlob(finalAtlas);
+        // Apply In-Place Centering if enabled
+        let singleRootMotion: any[] = [];
+        if (atlasSettings.enableInPlace && finalFrames.length > 1) {
+          const inPlaceRes = TemporalProcessor.applyInPlaceCentering(
+            finalFrames,
+            atlasSettings.inPlaceLockAxis ?? 'x'
+          );
+          finalFrames = inPlaceRes.alignedCanvases;
+          singleRootMotion = inPlaceRes.rootMotion;
+        }
 
         const cleanName = (exportFilename.trim() || loader.metadata.filename || 'animation')
           .replace(/\.[^/.]+$/, '')
@@ -1198,39 +1545,108 @@ export const App: React.FC = () => {
         const jsonFilename = `${cleanName}_frames.json`;
         const tresFilename = `${cleanName}_frames.tres`;
         const asepriteFilename = `${cleanName}_aseprite.json`;
+        const spineAtlasFilename = `${cleanName}.atlas`;
 
-        AtlasBuilder.triggerDownload(pngBlob, pngFilename);
+        // Duplicate Frame Eliminator
+        let framesToPack = finalFrames;
+        let frameIndicesMap: number[] | undefined = undefined;
 
-        // Export 2D Normal Map (_normal.png) if requested
-        if (generateNormalMap) {
-          const normalCanvas = NormalMapGenerator.generateNormalMap(finalAtlas, 2.5);
-          const normalBlob = await AtlasBuilder.canvasToBlob(normalCanvas);
-          AtlasBuilder.triggerDownload(normalBlob, `${cleanName}_normal.png`);
+        if (atlasSettings.eliminateDuplicates && finalFrames.length > 1) {
+          const dedup = DuplicateEliminator.eliminateDuplicates(
+            finalFrames,
+            atlasSettings.duplicateThreshold ?? 0.992
+          );
+          framesToPack = dedup.uniqueFrames;
+          frameIndicesMap = dedup.frameIndicesMap;
         }
 
-        const jsonMeta = AtlasBuilder.createAtlasJson(
-          loader.metadata,
-          atlasSettings,
-          markers,
-          cropStart,
-          cropEnd
-        );
-        const jsonBlob = new Blob([JSON.stringify(jsonMeta, null, 4)], {
-          type: 'application/json',
-        });
-        AtlasBuilder.triggerDownload(jsonBlob, jsonFilename);
+        let finalAtlas: HTMLCanvasElement;
+        let singlePackedFrames: PackedFrameItem[] | undefined = undefined;
 
-        // Export Aseprite-compatible JSON (Phaser / Unity / Defold / Flame)
+        if (atlasSettings.layoutMode === 'advanced') {
+          const frameNames = framesToPack.map((_, i) => `${cleanName}_${i}`);
+          const packRes = AtlasBuilder.packFramesAdvanced(
+            framesToPack,
+            atlasSettings.packPadding ?? 2,
+            frameNames
+          );
+          finalAtlas = packRes.canvas;
+          singlePackedFrames = packRes.packedFrames;
+        } else {
+          const actualCols = Math.max(1, Math.min(cols, framesToPack.length));
+          const actualRows = Math.ceil(framesToPack.length / actualCols);
+          finalAtlas = AtlasBuilder.createAtlasCanvas(framesToPack, actualCols, actualRows, fw, fh);
+        }
+
+        let pngBlob: Blob;
+        if (atlasSettings.enablePng8) {
+          const quant = PngQuantizer.quantizeCanvas(finalAtlas, 256, true);
+          pngBlob = await Png8Encoder.encodeToBlob(quant);
+        } else {
+          pngBlob = await AtlasBuilder.canvasToBlob(finalAtlas);
+        }
+
+        const filesToExport: ExportFileItem[] = [];
+        filesToExport.push({ name: pngFilename, data: pngBlob });
+
+        // Export Spine / libGDX .atlas when Advanced Pack is active
+        if (atlasSettings.layoutMode === 'advanced' && singlePackedFrames) {
+          const spineAtlasText = AtlasBuilder.createSpineAtlas(
+            singlePackedFrames,
+            pngFilename,
+            finalAtlas.width,
+            finalAtlas.height
+          );
+          filesToExport.push({ name: spineAtlasFilename, text: spineAtlasText, isText: true });
+        }
+
+        // Export 2D Normal Map or Complete 2D PBR Pack
+        if (generatePbrPack || generateNormalMap) {
+          const normalCanvas = NormalMapGenerator.generateNormalMap(finalAtlas, 2.5);
+          const normalBlob = await AtlasBuilder.canvasToBlob(normalCanvas);
+          filesToExport.push({ name: `${cleanName}_normal.png`, data: normalBlob });
+
+          if (generatePbrPack) {
+            const roughnessCanvas = PbrGenerator.generateRoughnessMap(finalAtlas, atlasSettings.roughnessGloss ?? 50);
+            const roughnessBlob = await AtlasBuilder.canvasToBlob(roughnessCanvas);
+            filesToExport.push({ name: `${cleanName}_roughness.png`, data: roughnessBlob });
+
+            const emissionCanvas = PbrGenerator.generateEmissionMap(finalAtlas, atlasSettings.emissionThreshold ?? 180, 1.5);
+            const emissionBlob = await AtlasBuilder.canvasToBlob(emissionCanvas);
+            filesToExport.push({ name: `${cleanName}_emission.png`, data: emissionBlob });
+          }
+        }
+
+        // Export Silhouette Alpha Mask (_mask.png) if requested
+        if (generateMask) {
+          const maskCanvas = ImageProcessor.canvasToAlphaMask(finalAtlas);
+          const maskBlob = await AtlasBuilder.canvasToBlob(maskCanvas);
+          filesToExport.push({ name: `${cleanName}_mask.png`, data: maskBlob });
+        }
+
+        const jsonMeta = {
+          ...AtlasBuilder.createAtlasJson(
+            loader.metadata,
+            atlasSettings,
+            markers,
+            cropStart,
+            cropEnd
+          ),
+          rootMotion: singleRootMotion.length > 0 ? singleRootMotion : undefined,
+        };
+        filesToExport.push({ name: jsonFilename, text: JSON.stringify(jsonMeta, null, 4), isText: true });
+
+        // Export Aseprite-compatible JSON (Phaser / Unity / Defold / Flame / Pixi)
         const asepriteMeta = AtlasBuilder.createAsepriteJson(
           loader.metadata,
           atlasSettings,
           markers,
-          cleanName
+          cleanName,
+          singlePackedFrames,
+          finalAtlas.width,
+          finalAtlas.height
         );
-        const asepriteBlob = new Blob([JSON.stringify(asepriteMeta, null, 2)], {
-          type: 'application/json',
-        });
-        AtlasBuilder.triggerDownload(asepriteBlob, asepriteFilename);
+        filesToExport.push({ name: asepriteFilename, text: JSON.stringify(asepriteMeta, null, 2), isText: true });
 
         // Export native Godot 4 SpriteFrames resource (.tres) with matching relative texture
         const tresString = GodotExporter.generateSpriteFramesTres(
@@ -1238,10 +1654,40 @@ export const App: React.FC = () => {
           pngFilename,
           atlasSettings,
           markers.length,
-          atlasSettings.fps
+          atlasSettings.fps,
+          singlePackedFrames,
+          frameIndicesMap
         );
-        const tresBlob = new Blob([tresString], { type: 'text/plain' });
-        AtlasBuilder.triggerDownload(tresBlob, tresFilename);
+        filesToExport.push({ name: tresFilename, text: tresString, isText: true });
+
+        // 2D Mesh & Overdraw Optimizer
+        let singleSampleMesh: any = undefined;
+        if (atlasSettings.meshSettings?.enabled) {
+          const sampleFrame = frameCanvases[0] || viewportCanvasRef.current;
+          if (sampleFrame) {
+            singleSampleMesh = MeshGenerator.generateMesh(sampleFrame, atlasSettings.meshSettings);
+            const spineAttachment = MeshGenerator.generateSpineAttachment(cleanName, singleSampleMesh, fw, fh);
+            const meshJson = {
+              generator: 'SpriteForge Studio',
+              version: '2.0',
+              name: cleanName,
+              vertexCount: singleSampleMesh.vertexCount,
+              triangleCount: singleSampleMesh.triangleCount,
+              areaSavingsPercent: singleSampleMesh.areaSavingsPercent,
+              mesh: {
+                vertices: singleSampleMesh.vertices,
+                uvs: singleSampleMesh.uvs,
+                indices: singleSampleMesh.indices,
+              },
+              spineAttachment,
+            };
+            filesToExport.push({
+              name: `${cleanName}_mesh.json`,
+              text: JSON.stringify(meshJson, null, 2),
+              isText: true,
+            });
+          }
+        }
 
         // Export native Godot 4 CharacterBody2D Scene (.tscn) if enabled
         if (atlasSettings.collisionSettings?.generateTscn ?? true) {
@@ -1250,11 +1696,22 @@ export const App: React.FC = () => {
             cleanName,
             tresFilename,
             atlasSettings,
-            cleanName
+            cleanName,
+            singleSampleMesh
           );
-          const tscnBlob = new Blob([tscnString], { type: 'text/plain' });
-          AtlasBuilder.triggerDownload(tscnBlob, tscnFilename);
+          filesToExport.push({ name: tscnFilename, text: tscnString, isText: true });
         }
+
+        const exportRes = await ExportManager.saveExportPackage(exportDestinationDir, cleanName, filesToExport);
+        if (exportRes.canceled) return;
+        if (!exportRes.success) {
+          alert(`Export failed: ${exportRes.error || 'Unknown error'}`);
+          return;
+        }
+        const lastDir = ExportManager.getLastExportDirectory();
+        if (lastDir) setExportDestinationDir(lastDir);
+        setExportToast(`Created folder "${cleanName}" with ${filesToExport.length} files`);
+        setTimeout(() => setExportToast(null), 4500);
       } else {
         const loader = spritesLoaderRef.current;
         if (loader.metadata.totalFrames <= 0) return;
@@ -1271,17 +1728,26 @@ export const App: React.FC = () => {
           }
         }
 
-        const zipBlob = await SpriteProcessor.exportSpritesZip(
-          filesData,
-          spriteTransforms,
-          currentTransform,
-          spritesSettings
-        );
-
         const cleanName = (exportFilename.trim() || 'sprites')
           .replace(/\.[^/.]+$/, '')
           .replace(/[^a-zA-Z0-9_-]/g, '_') || 'sprites';
-        AtlasBuilder.triggerDownload(zipBlob, `${cleanName}.zip`);
+
+        const filesToExport: ExportFileItem[] = [];
+        for (const item of filesData) {
+          const blob = await AtlasBuilder.canvasToBlob(item.canvas);
+          filesToExport.push({ name: item.name, data: blob });
+        }
+
+        const exportRes = await ExportManager.saveExportPackage(exportDestinationDir, cleanName, filesToExport);
+        if (exportRes.canceled) return;
+        if (!exportRes.success) {
+          alert(`Export failed: ${exportRes.error || 'Unknown error'}`);
+          return;
+        }
+        const lastDir = ExportManager.getLastExportDirectory();
+        if (lastDir) setExportDestinationDir(lastDir);
+        setExportToast(`Created folder "${cleanName}" with ${filesToExport.length} sprites`);
+        setTimeout(() => setExportToast(null), 4500);
       }
     } catch (e: any) {
       alert(`Export failed: ${e.message}`);
@@ -1364,7 +1830,17 @@ export const App: React.FC = () => {
         const cleanName = (exportFilename.trim() || 'character')
           .replace(/\.[^/.]+$/, '')
           .replace(/[^a-zA-Z0-9_-]/g, '_') || 'character';
-        AtlasBuilder.triggerDownload(gifBlob, `${cleanName}_master.gif`);
+        const gifName = `${cleanName}_master.gif`;
+        const exportRes = await ExportManager.saveExportPackage(exportDestinationDir, cleanName, [
+          { name: gifName, data: gifBlob },
+        ]);
+        if (exportRes.canceled) return;
+        if (!exportRes.success) {
+          AtlasBuilder.triggerDownload(gifBlob, gifName);
+        } else {
+          setExportToast(`Saved ${gifName} to folder "${cleanName}"`);
+          setTimeout(() => setExportToast(null), 4000);
+        }
         return;
       }
 
@@ -1416,7 +1892,17 @@ export const App: React.FC = () => {
       const cleanName = (exportFilename.trim() || loader.metadata.filename || 'animation')
         .replace(/\.[^/.]+$/, '')
         .replace(/[^a-zA-Z0-9_-]/g, '_') || 'animation';
-      AtlasBuilder.triggerDownload(gifBlob, `${cleanName}.gif`);
+      const gifName = `${cleanName}.gif`;
+      const exportRes = await ExportManager.saveExportPackage(exportDestinationDir, cleanName, [
+        { name: gifName, data: gifBlob },
+      ]);
+      if (exportRes.canceled) return;
+      if (!exportRes.success) {
+        AtlasBuilder.triggerDownload(gifBlob, gifName);
+      } else {
+        setExportToast(`Saved ${gifName} to folder "${cleanName}"`);
+        setTimeout(() => setExportToast(null), 4000);
+      }
     } catch (e: any) {
       alert(`GIF Export failed: ${e.message}`);
     } finally {
@@ -1468,6 +1954,8 @@ export const App: React.FC = () => {
           onChangeKeying={setKeyingSettings}
           isEyedropperActive={isEyedropperActive}
           setIsEyedropperActive={setIsEyedropperActive}
+          eyedropperTarget={eyedropperTarget}
+          setEyedropperTarget={setEyedropperTarget}
           onAutoDetectKey={handleAutoDetectKey}
           atlasSettings={atlasSettings}
           onChangeAtlasSettings={setAtlasSettings}
@@ -1480,7 +1968,7 @@ export const App: React.FC = () => {
           onMouseDown={startResizingLeft}
           onDoubleClick={() => {
             setLeftWidth(290);
-            localStorage.setItem('converter_atlas_left_w', '290');
+            localStorage.setItem('spriteforge_left_w', '290');
           }}
           title="Drag to resize Left Panel (Double-click to reset)"
         />
@@ -1489,16 +1977,31 @@ export const App: React.FC = () => {
         <main className="center-content">
           <Viewport
             frameCanvas={viewportCanvas}
+            rawFrameCanvas={rawFrameCanvas}
             bgMode={bgMode}
             setBgMode={setBgMode}
             bgColor={bgColor}
             setBgColor={setBgColor}
             isEyedropperActive={isEyedropperActive}
             setIsEyedropperActive={setIsEyedropperActive}
+            eyedropperTarget={eyedropperTarget}
+            setEyedropperTarget={setEyedropperTarget}
             onPickColor={(color) => {
-              setKeyingSettings((prev) => ({ ...prev, keyColor: color, enabled: true }));
-              if (!bgPresets.some((p) => p[0] === color[0] && p[1] === color[1] && p[2] === color[2])) {
-                setBgPresets((prev) => [color, ...prev.slice(0, 4)]);
+              if (eyedropperTarget === 'secondary') {
+                setKeyingSettings((prev) => ({
+                  ...prev,
+                  secondaryKey: {
+                    enabled: true,
+                    color,
+                    gain: prev.secondaryKey?.gain ?? 100,
+                  },
+                  enabled: true,
+                }));
+              } else {
+                setKeyingSettings((prev) => ({ ...prev, keyColor: color, enabled: true }));
+                if (!bgPresets.some((p) => p[0] === color[0] && p[1] === color[1] && p[2] === color[2])) {
+                  setBgPresets((prev) => [color, ...prev.slice(0, 4)]);
+                }
               }
             }}
             onFilesDropped={handleLoadFiles}
@@ -1524,6 +2027,10 @@ export const App: React.FC = () => {
             }
             showColliders={showColliders}
             setShowColliders={setShowColliders}
+            meshSettings={atlasSettings.meshSettings}
+            onUpdateMeshSettings={(mesh) =>
+              setAtlasSettings((prev) => ({ ...prev, meshSettings: mesh }))
+            }
             renderTrigger={renderTrigger}
           />
 
@@ -1561,7 +2068,7 @@ export const App: React.FC = () => {
           onMouseDown={startResizingRight}
           onDoubleClick={() => {
             setRightWidth(300);
-            localStorage.setItem('converter_atlas_right_w', '300');
+            localStorage.setItem('spriteforge_right_w', '300');
           }}
           title="Drag to resize Right Panel (Double-click to reset)"
         />
@@ -1593,12 +2100,21 @@ export const App: React.FC = () => {
                 hasMedia={hasMedia}
                 exportFilename={exportFilename}
                 setExportFilename={setExportFilename}
+                destinationDir={exportDestinationDir}
+                onSelectDestinationDir={handleSelectDestinationDir}
                 generateNormalMap={generateNormalMap}
                 setGenerateNormalMap={setGenerateNormalMap}
+                generatePbrPack={generatePbrPack}
+                setGeneratePbrPack={setGeneratePbrPack}
+                enablePng8={atlasSettings.enablePng8}
+                setEnablePng8={(val) => setAtlasSettings((prev) => ({ ...prev, enablePng8: val }))}
+                generateMask={generateMask}
+                setGenerateMask={setGenerateMask}
                 onExportGif={handleExportGif}
                 isExportingGif={isExportingGif}
                 exportScope={exportScope}
                 masterTracksCount={tracks.filter((t) => t.enabled).length}
+                layoutMode={atlasSettings.layoutMode}
               />
             </>
           ) : (
@@ -1629,6 +2145,8 @@ export const App: React.FC = () => {
                 hasMedia={hasMedia}
                 exportFilename={exportFilename}
                 setExportFilename={setExportFilename}
+                destinationDir={exportDestinationDir}
+                onSelectDestinationDir={handleSelectDestinationDir}
               />
             </>
           )}
@@ -1658,6 +2176,33 @@ export const App: React.FC = () => {
           setBgPresets(DEFAULT_BG_PRESETS);
         }}
       />
+
+      {/* Export Success Notification Toast */}
+      {exportToast && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: 24,
+            right: 24,
+            zIndex: 9999,
+            background: 'rgba(12, 22, 18, 0.96)',
+            border: '1px solid var(--accent-green)',
+            boxShadow: '0 8px 30px rgba(0, 255, 170, 0.25)',
+            borderRadius: 8,
+            padding: '12px 18px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            color: 'var(--text-bright)',
+            fontSize: 12,
+            fontWeight: 600,
+            backdropFilter: 'blur(8px)',
+          }}
+        >
+          <FolderCheck size={18} color="var(--accent-green)" />
+          <span>{exportToast}</span>
+        </div>
+      )}
     </div>
   );
 };

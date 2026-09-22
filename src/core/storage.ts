@@ -1,6 +1,6 @@
 import { AtlasSettings, ChromaKeySettings, SpritesSettings } from './types';
 
-const STORAGE_KEY = 'converter_atlas_settings_v1';
+const STORAGE_KEY = 'spriteforge_settings_v2';
 
 export interface SavedSettingsState {
   keying: ChromaKeySettings;
