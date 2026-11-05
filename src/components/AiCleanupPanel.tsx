@@ -1,6 +1,6 @@
 import React from 'react';
-import { AtlasSettings } from '../core/types';
-import { Anchor, Sparkles, Layers, Crosshair } from 'lucide-react';
+import { AtlasSettings, PixelArtSettings } from '../core/types';
+import { Anchor, Sparkles, Layers, Crosshair, RefreshCw, Gamepad2 } from 'lucide-react';
 
 interface AiCleanupPanelProps {
   settings: AtlasSettings;
@@ -417,6 +417,245 @@ export const AiCleanupPanel: React.FC<AiCleanupPanelProps> = ({ settings, onChan
               />
               <span>Show Mesh Wireframe in Viewport</span>
             </label>
+          </div>
+        )}
+      </div>
+
+      {/* 6. Seamless Loop Synthesizer (AI Motion Seam Blending) */}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8,
+          padding: '10px 10px',
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border-subtle)',
+          borderRadius: 6,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              cursor: 'pointer',
+              fontSize: 11,
+              fontWeight: 600,
+              color: 'var(--text-bright)',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={settings.enableLoopBlend ?? false}
+              onChange={(e) => update('enableLoopBlend', e.target.checked)}
+              style={{ accentColor: '#A855F7', cursor: 'pointer' }}
+            />
+            <RefreshCw size={13} style={{ color: settings.enableLoopBlend ? '#A855F7' : 'var(--text-muted)' }} />
+            Seamless Loop Blending
+          </label>
+          <span
+            style={{
+              fontSize: 9,
+              color: settings.enableLoopBlend ? '#A855F7' : 'var(--text-muted)',
+              background: settings.enableLoopBlend ? 'rgba(168, 85, 247, 0.15)' : 'transparent',
+              padding: '1px 5px',
+              borderRadius: 4,
+              fontWeight: 600,
+            }}
+          >
+            Zero-Pop
+          </span>
+        </div>
+        <div style={{ fontSize: 10, color: 'var(--text-dim)', lineHeight: 1.3 }}>
+          Harmonizes and crossfades the ending frames into the start pose to eliminate seams and pops in AI cycles.
+        </div>
+
+        {settings.enableLoopBlend && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 4 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Blend Transition Frames</span>
+              <span style={{ fontSize: 9, fontFamily: 'monospace', color: '#A855F7' }}>
+                {settings.loopBlendFrames ?? 3} frames
+              </span>
+            </div>
+            <input
+              type="range"
+              min={1}
+              max={6}
+              step={1}
+              value={settings.loopBlendFrames ?? 3}
+              onChange={(e) => update('loopBlendFrames', Number(e.target.value))}
+              style={{ width: '100%', accentColor: '#A855F7' }}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* 7. Retro Pixel-Art Converter (Pixelize & Palettes) */}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8,
+          padding: '10px 10px',
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border-subtle)',
+          borderRadius: 6,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              cursor: 'pointer',
+              fontSize: 11,
+              fontWeight: 600,
+              color: 'var(--text-bright)',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={settings.pixelArtSettings?.enabled ?? false}
+              onChange={(e) => {
+                const cur = settings.pixelArtSettings ?? {
+                  enabled: false,
+                  targetResolution: 64,
+                  palette: 'pico8',
+                  dither: true,
+                  outline: true,
+                };
+                update('pixelArtSettings', { ...cur, enabled: e.target.checked });
+              }}
+              style={{ accentColor: '#10B981', cursor: 'pointer' }}
+            />
+            <Gamepad2 size={13} style={{ color: settings.pixelArtSettings?.enabled ? '#10B981' : 'var(--text-muted)' }} />
+            Retro Pixel-Art Converter
+          </label>
+          <span
+            style={{
+              fontSize: 9,
+              color: settings.pixelArtSettings?.enabled ? '#10B981' : 'var(--text-muted)',
+              background: settings.pixelArtSettings?.enabled ? 'rgba(16, 185, 129, 0.15)' : 'transparent',
+              padding: '1px 5px',
+              borderRadius: 4,
+              fontWeight: 600,
+            }}
+          >
+            Retro
+          </span>
+        </div>
+        <div style={{ fontSize: 10, color: 'var(--text-dim)', lineHeight: 1.3 }}>
+          Converts AI video frames into crisp, quantized retro pixel-art sprites with classic console palettes.
+        </div>
+
+        {settings.pixelArtSettings?.enabled && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 6 }}>
+            {/* Resolution Selector */}
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Target Pixel Resolution</span>
+                <span style={{ fontSize: 9, fontFamily: 'monospace', color: '#10B981' }}>
+                  {settings.pixelArtSettings.targetResolution || 64}px
+                </span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 4 }}>
+                {[32, 48, 64, 96, 128].map((res) => {
+                  const isActive = (settings.pixelArtSettings?.targetResolution ?? 64) === res;
+                  return (
+                    <button
+                      key={res}
+                      onClick={() =>
+                        update('pixelArtSettings', {
+                          ...settings.pixelArtSettings!,
+                          targetResolution: res,
+                        })
+                      }
+                      style={{
+                        height: 24,
+                        fontSize: 9,
+                        fontWeight: isActive ? 700 : 500,
+                        borderRadius: 4,
+                        background: isActive ? 'rgba(16, 185, 129, 0.2)' : 'var(--bg-input)',
+                        border: isActive ? '1px solid #10B981' : '1px solid var(--border-subtle)',
+                        color: isActive ? '#10B981' : 'var(--text-muted)',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {res}px
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Retro Palette Dropdown */}
+            <div>
+              <span style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>
+                Color Palette
+              </span>
+              <select
+                value={settings.pixelArtSettings.palette || 'pico8'}
+                onChange={(e) =>
+                  update('pixelArtSettings', {
+                    ...settings.pixelArtSettings!,
+                    palette: e.target.value as any,
+                  })
+                }
+                style={{
+                  width: '100%',
+                  height: 26,
+                  fontSize: 10,
+                  borderRadius: 4,
+                  background: 'var(--bg-input)',
+                  border: '1px solid var(--border-subtle)',
+                  color: 'var(--text-bright)',
+                  padding: '0 6px',
+                  cursor: 'pointer',
+                }}
+              >
+                <option value="none">Original Colors (Quantized)</option>
+                <option value="pico8">PICO-8 (16 Colors)</option>
+                <option value="gameboy">Nintendo Game Boy (4 Greens)</option>
+                <option value="db32">DawnBringer 32 (DB32 Classic)</option>
+                <option value="endesga32">Endesga 32 (EDG32 Vibrant)</option>
+              </select>
+            </div>
+
+            {/* Dither & Outline Toggles */}
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 10, color: 'var(--text-bright)' }}>
+                <input
+                  type="checkbox"
+                  checked={settings.pixelArtSettings.dither !== false}
+                  onChange={(e) =>
+                    update('pixelArtSettings', {
+                      ...settings.pixelArtSettings!,
+                      dither: e.target.checked,
+                    })
+                  }
+                  style={{ accentColor: '#10B981' }}
+                />
+                <span>Bayer Dithering</span>
+              </label>
+
+              <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 10, color: 'var(--text-bright)' }}>
+                <input
+                  type="checkbox"
+                  checked={settings.pixelArtSettings.outline !== false}
+                  onChange={(e) =>
+                    update('pixelArtSettings', {
+                      ...settings.pixelArtSettings!,
+                      outline: e.target.checked,
+                    })
+                  }
+                  style={{ accentColor: '#10B981' }}
+                />
+                <span>1px Outline</span>
+              </label>
+            </div>
           </div>
         )}
       </div>

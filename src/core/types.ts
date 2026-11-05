@@ -95,6 +95,19 @@ export interface AtlasSettings {
   generatePbrPack?: boolean;
   emissionThreshold?: number; // 0..255 (default 180)
   roughnessGloss?: number; // 0..100 (default 50)
+  // 🔄 Seamless Loop Synthesizer
+  enableLoopBlend?: boolean;
+  loopBlendFrames?: number; // 1..8 (default 3)
+  // 👾 Retro Pixel-Art Quantizer
+  pixelArtSettings?: PixelArtSettings;
+}
+
+export interface PixelArtSettings {
+  enabled: boolean;
+  targetResolution: number; // 32, 48, 64, 96, 128
+  palette: 'none' | 'pico8' | 'gameboy' | 'db32' | 'endesga32';
+  dither: boolean;
+  outline?: boolean;
 }
 
 export interface MeshSettings {

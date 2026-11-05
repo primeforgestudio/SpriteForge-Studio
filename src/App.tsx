@@ -12,6 +12,8 @@ import { DuplicateEliminator } from './core/duplicateEliminator';
 import { PngQuantizer, Png8Encoder } from './core/pngQuantizer';
 import { PbrGenerator } from './core/pbrGenerator';
 import { TemporalProcessor } from './core/temporalProcessor';
+import { LoopSynthesizer } from './core/loopSynthesizer';
+import { PixelArtConverter } from './core/pixelArtConverter';
 import { NormalMapGenerator } from './core/normalMapGenerator';
 import { GifEncoder } from './core/gifEncoder';
 import { ExportManager, ExportFileItem } from './core/exportManager';
@@ -930,6 +932,21 @@ export const App: React.FC = () => {
         finalFrames = inPlaceRes.alignedCanvases;
       }
 
+      // 6.5 Seamless Loop Blending
+      if (atlasSettings.enableLoopBlend && finalFrames.length > 3) {
+        finalFrames = LoopSynthesizer.createSeamlessLoop(
+          finalFrames,
+          atlasSettings.loopBlendFrames ?? 3
+        );
+      }
+
+      // 6.6 Retro Pixel-Art Converter
+      if (atlasSettings.pixelArtSettings?.enabled) {
+        finalFrames = finalFrames.map((c) =>
+          PixelArtConverter.convertToPixelArt(c, atlasSettings.pixelArtSettings!)
+        );
+      }
+
       // 7. Duplicate Frame Eliminator
       let framesForAtlas = finalFrames;
       if (atlasSettings.eliminateDuplicates && finalFrames.length > 1) {
@@ -1281,6 +1298,19 @@ export const App: React.FC = () => {
               finalTrackFrames = inPlaceRes.alignedCanvases;
             }
 
+            if (atlasSettings.enableLoopBlend && finalTrackFrames.length > 3) {
+              finalTrackFrames = LoopSynthesizer.createSeamlessLoop(
+                finalTrackFrames,
+                atlasSettings.loopBlendFrames ?? 3
+              );
+            }
+
+            if (atlasSettings.pixelArtSettings?.enabled) {
+              finalTrackFrames = finalTrackFrames.map((c) =>
+                PixelArtConverter.convertToPixelArt(c, atlasSettings.pixelArtSettings!)
+              );
+            }
+
             const startIdx = allProcessedCanvases.length;
             const frameIndices: number[] = [];
             for (let i = 0; i < finalTrackFrames.length; i++) {
@@ -1536,6 +1566,19 @@ export const App: React.FC = () => {
           );
           finalFrames = inPlaceRes.alignedCanvases;
           singleRootMotion = inPlaceRes.rootMotion;
+        }
+
+        if (atlasSettings.enableLoopBlend && finalFrames.length > 3) {
+          finalFrames = LoopSynthesizer.createSeamlessLoop(
+            finalFrames,
+            atlasSettings.loopBlendFrames ?? 3
+          );
+        }
+
+        if (atlasSettings.pixelArtSettings?.enabled) {
+          finalFrames = finalFrames.map((c) =>
+            PixelArtConverter.convertToPixelArt(c, atlasSettings.pixelArtSettings!)
+          );
         }
 
         const cleanName = (exportFilename.trim() || loader.metadata.filename || 'animation')
