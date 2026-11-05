@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
 import { AtlasBuilder } from './atlasBuilder';
+import { isTauriEnvironment } from './tauriBridge';
 
 export interface ExportFileItem {
   name: string;
@@ -16,27 +17,8 @@ export interface SaveExportResult {
   error?: string;
 }
 
-declare global {
-  interface Window {
-    electronAPI?: {
-      selectExportDirectory: (defaultPath?: string) => Promise<{ canceled: boolean; filePaths: string[] }>;
-      saveExportFiles: (options: {
-        baseDir: string;
-        folderName: string;
-        files: Array<{ name: string; isText?: boolean; text?: string; data?: Uint8Array | ArrayBuffer }>;
-      }) => Promise<{ success: boolean; targetDir?: string; count?: number; error?: string }>;
-      openPath: (folderPath: string) => Promise<string>;
-      getDefaultExportDir: () => Promise<string>;
-    };
-  }
-}
-
 export class ExportManager {
   private static STORAGE_KEY = 'spriteforge_last_export_dir';
-
-  public static isElectron(): boolean {
-    return typeof window !== 'undefined' && typeof window.electronAPI?.saveExportFiles === 'function';
-  }
 
   public static getLastExportDirectory(): string | null {
     try {
@@ -53,18 +35,27 @@ export class ExportManager {
   }
 
   /**
-   * Prompts native directory picker (Electron) or File System Access API
+   * Prompts native directory picker (Tauri) or File System Access API
    */
   public static async selectExportDirectory(currentPath?: string): Promise<string | null> {
-    if (this.isElectron() && window.electronAPI) {
-      const defaultDir = currentPath || this.getLastExportDirectory() || undefined;
-      const res = await window.electronAPI.selectExportDirectory(defaultDir);
-      if (res && !res.canceled && res.filePaths.length > 0) {
-        const chosen = res.filePaths[0];
-        this.setLastExportDirectory(chosen);
-        return chosen;
+    if (isTauriEnvironment()) {
+      try {
+        const { open } = await import('@tauri-apps/plugin-dialog');
+        const defaultDir = currentPath || this.getLastExportDirectory() || undefined;
+        const selected = await open({
+          directory: true,
+          multiple: false,
+          defaultPath: defaultDir,
+          title: 'Select Destination Directory for Sprite Export',
+        });
+        if (selected && typeof selected === 'string') {
+          this.setLastExportDirectory(selected);
+          return selected;
+        }
+        return null;
+      } catch (err) {
+        console.warn('[ExportManager] Tauri dialog open error:', err);
       }
-      return null;
     }
 
     return null;
@@ -83,69 +74,52 @@ export class ExportManager {
       .trim()
       .replace(/[<>:"/\\|?*]/g, '_');
 
-    // --- 1. ELECTRON NATIVE MODE (creates folder & writes files natively) ---
-    if (this.isElectron() && window.electronAPI) {
-      let baseDir = preferredBaseDir || this.getLastExportDirectory();
+    // --- 1. TAURI NATIVE DESKTOP MODE ---
+    if (isTauriEnvironment()) {
+      try {
+        const { mkdir, writeFile } = await import('@tauri-apps/plugin-fs');
+        let baseDir = preferredBaseDir || this.getLastExportDirectory();
 
-      if (!baseDir) {
-        const picked = await this.selectExportDirectory();
-        if (!picked) {
-          return { success: false, canceled: true };
+        if (!baseDir) {
+          const picked = await this.selectExportDirectory();
+          if (!picked) {
+            return { success: false, canceled: true };
+          }
+          baseDir = picked;
         }
-        baseDir = picked;
-      }
 
-      // Convert Blobs to Uint8Array for IPC serialization
-      const serializedFiles: Array<{
-        name: string;
-        isText?: boolean;
-        text?: string;
-        data?: Uint8Array;
-      }> = [];
+        const separator = baseDir.includes('\\') ? '\\' : '/';
+        const targetDir = `${baseDir}${separator}${safeFolderName}`;
 
-      for (const item of items) {
-        if (item.isText || typeof item.text === 'string') {
-          serializedFiles.push({
-            name: item.name,
-            isText: true,
-            text: item.text ?? '',
-          });
-        } else if (item.data instanceof Blob) {
-          const buffer = await item.data.arrayBuffer();
-          serializedFiles.push({
-            name: item.name,
-            isText: false,
-            data: new Uint8Array(buffer),
-          });
-        } else if (item.data instanceof ArrayBuffer) {
-          serializedFiles.push({
-            name: item.name,
-            isText: false,
-            data: new Uint8Array(item.data),
-          });
-        } else if (item.data instanceof Uint8Array) {
-          serializedFiles.push({
-            name: item.name,
-            isText: false,
-            data: item.data,
-          });
+        await mkdir(targetDir, { recursive: true });
+
+        for (const item of items) {
+          const filePath = `${targetDir}${separator}${item.name}`;
+          if (item.isText || typeof item.text === 'string') {
+            const encoder = new TextEncoder();
+            await writeFile(filePath, encoder.encode(item.text ?? ''));
+          } else if (item.data instanceof Blob) {
+            const buffer = await item.data.arrayBuffer();
+            await writeFile(filePath, new Uint8Array(buffer));
+          } else if (item.data instanceof ArrayBuffer) {
+            await writeFile(filePath, new Uint8Array(item.data));
+          } else if (item.data instanceof Uint8Array) {
+            await writeFile(filePath, item.data);
+          }
         }
-      }
 
-      const res = await window.electronAPI.saveExportFiles({
-        baseDir,
-        folderName: safeFolderName,
-        files: serializedFiles,
-      });
-
-      if (res.success) {
         this.setLastExportDirectory(baseDir);
+        return {
+          success: true,
+          targetDir,
+          count: items.length,
+        };
+      } catch (err: any) {
+        console.warn('[ExportManager] Tauri native export error, falling back to ZIP:', err);
       }
-
-      return res;
     }
 
-    // --- 2. BROWSER FILE SYSTEM ACCESS API (Chromium / Edge) ---
+    // --- 2. BROWSER FILE SYSTEM ACCESS API ---
     if (typeof (window as any).showDirectoryPicker === 'function') {
       try {
         const parentHandle = await (window as any).showDirectoryPicker({
@@ -175,11 +149,11 @@ export class ExportManager {
         if (err.name === 'AbortError') {
           return { success: false, canceled: true };
         }
-        console.warn('DirectoryPicker failed or declined, falling back to ZIP:', err);
+        console.warn('DirectoryPicker failed, falling back to ZIP:', err);
       }
     }
 
-    // --- 3. FALLBACK: JSZip Archive containing the folder ---
+    // --- 3. UNIVERSAL FALLBACK: JSZip Archive ---
     try {
       const zip = new JSZip();
       const folder = zip.folder(safeFolderName) || zip;

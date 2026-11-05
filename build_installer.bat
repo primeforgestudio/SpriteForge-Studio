@@ -1,13 +1,15 @@
 @echo off
-title SpriteForge Studio - Build Desktop App
+title SpriteForge Studio - Build Standalone App (Tauri 2.0 + Rust)
 cd /d "%~dp0"
 
 echo ========================================================
-echo   SpriteForge Studio - Desktop Distribution Builder
+echo   SpriteForge Studio - Standalone Desktop Builder
 echo ========================================================
 echo.
 
-echo [1/2] Compiling TypeScript & Vite frontend...
+set "PATH=C:\Users\arakelyan.d\AppData\Local\Microsoft\WinGet\Packages\BrechtSanders.WinLibs.POSIX.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\mingw64\bin;C:\Users\arakelyan.d\.cargo\bin;%PATH%"
+
+echo [1/2] Building Vite & TypeScript frontend...
 call npm.cmd run build
 if %ERRORLEVEL% NEQ 0 (
     echo [ERROR] Frontend build failed!
@@ -16,19 +18,17 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 echo.
-echo [2/2] Packaging Desktop Application with Electron Builder...
-call npm.cmd run dist
+echo [2/2] Compiling native binary with Tauri 2.0...
+call npx.cmd tauri build --no-bundle
 if %ERRORLEVEL% NEQ 0 (
-    echo [ERROR] Packaging failed!
+    echo [ERROR] Tauri compilation failed!
     pause
     exit /b %ERRORLEVEL%
 )
 
 echo.
 echo ========================================================
-echo   Build SUCCESS!
-echo   Binaries created in folder: "%~dp0release"
+echo   Build SUCCESS! Standalone binary:
+echo   "%~dp0src-tauri\target\release\app.exe"
 echo ========================================================
-echo.
-explorer "%~dp0release"
 pause

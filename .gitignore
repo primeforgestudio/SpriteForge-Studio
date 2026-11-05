@@ -1,16 +1,16 @@
-# Node & Build artifacts
+# Node & Frontend Build
 node_modules/
 dist/
 .vite/
-release/
 
-# Python & logs
-__pycache__/
-*.py[cod]
-*.log
+# Tauri & Rust Build
+target/
+src-tauri/target/
 
-# OS / Editor
+# OS / Editor files
 .DS_Store
 Thumbs.db
 *.tmp
 .vscode/
+.claude/
+CLAUDE.md
