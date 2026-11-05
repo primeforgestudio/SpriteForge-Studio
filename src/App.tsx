@@ -25,6 +25,7 @@ import {
   DEFAULT_BG_PRESETS,
 } from './core/storage';
 import { WebGLKeyer } from './core/webglKeyer';
+import { globalHistory } from './core/history';
 import { FolderCheck } from 'lucide-react';
 import { Header } from './components/Header';
 import { LeftSidebar, LoadedFileItem } from './components/LeftSidebar';
@@ -172,7 +173,145 @@ export const App: React.FC = () => {
 
   // Previews
   const [atlasCanvas, setAtlasCanvas] = useState<HTMLCanvasElement | null>(null);
+  const [atlasFrames, setAtlasFrames] = useState<HTMLCanvasElement[]>([]);
   const [spritesPreviewCanvases, setSpritesPreviewCanvases] = useState<HTMLCanvasElement[]>([]);
+
+  // Dual-Stream / Alpha Matte Video State
+  const [maskFilename, setMaskFilename] = useState<string>('');
+  const [hasMaskMedia, setHasMaskMedia] = useState<boolean>(false);
+  const [invertMask, setInvertMask] = useState<boolean>(false);
+
+  // Undo / Redo History State
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+
+  useEffect(() => {
+    return globalHistory.subscribe(() => {
+      setCanUndo(globalHistory.canUndo);
+      setCanRedo(globalHistory.canRedo);
+    });
+  }, []);
+
+  // Debounced History Snapshot on state changes
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      globalHistory.pushSnapshot({
+        keyingSettings,
+        atlasSettings,
+        spritesSettings,
+        cropStart,
+        cropEnd,
+        cropBox: atlasSettings.cropBox,
+        bgMode,
+        bgColor,
+        description: 'Settings modified',
+      });
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [keyingSettings, atlasSettings, spritesSettings, cropStart, cropEnd, bgMode, bgColor]);
+
+  const handleUndo = useCallback(() => {
+    const current = {
+      keyingSettings,
+      atlasSettings,
+      spritesSettings,
+      cropStart,
+      cropEnd,
+      cropBox: atlasSettings.cropBox,
+      bgMode,
+      bgColor,
+      description: 'Current State',
+    };
+    const prev = globalHistory.undo(current);
+    if (prev) {
+      setKeyingSettings(prev.keyingSettings);
+      setAtlasSettings(prev.atlasSettings);
+      setSpritesSettings(prev.spritesSettings);
+      setCropStart(prev.cropStart);
+      setCropEnd(prev.cropEnd);
+      setBgMode(prev.bgMode);
+      setBgColor(prev.bgColor);
+      setRenderTrigger((v) => v + 1);
+    }
+  }, [keyingSettings, atlasSettings, spritesSettings, cropStart, cropEnd, bgMode, bgColor]);
+
+  const handleRedo = useCallback(() => {
+    const current = {
+      keyingSettings,
+      atlasSettings,
+      spritesSettings,
+      cropStart,
+      cropEnd,
+      cropBox: atlasSettings.cropBox,
+      bgMode,
+      bgColor,
+      description: 'Current State',
+    };
+    const next = globalHistory.redo(current);
+    if (next) {
+      setKeyingSettings(next.keyingSettings);
+      setAtlasSettings(next.atlasSettings);
+      setSpritesSettings(next.spritesSettings);
+      setCropStart(next.cropStart);
+      setCropEnd(next.cropEnd);
+      setBgMode(next.bgMode);
+      setBgColor(next.bgColor);
+      setRenderTrigger((v) => v + 1);
+    }
+  }, [keyingSettings, atlasSettings, spritesSettings, cropStart, cropEnd, bgMode, bgColor]);
+
+  // Global Keyboard shortcuts: Ctrl+Z and Ctrl+Shift+Z / Ctrl+Y
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName)) return;
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          handleRedo();
+        } else {
+          handleUndo();
+        }
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleUndo, handleRedo]);
+
+  // Dual-Stream Matte Actions
+  const handleLoadMaskMedia = async (file: File) => {
+    const isVid = !!file.name.match(/\.(mp4|webm|mov|mkv|avi)$/i);
+    if (isVid) {
+      await atlasLoaderRef.current.loadMaskVideoFile(file);
+    } else {
+      await atlasLoaderRef.current.loadMaskImageFiles([file]);
+    }
+    setMaskFilename(file.name);
+    setHasMaskMedia(true);
+    setRenderTrigger((v) => v + 1);
+    updateAtlasPreview();
+  };
+
+  const handleRemoveMaskMedia = () => {
+    atlasLoaderRef.current.removeMaskMedia();
+    setMaskFilename('');
+    setHasMaskMedia(false);
+    setRenderTrigger((v) => v + 1);
+    updateAtlasPreview();
+  };
+
+  const handleToggleInvertMask = () => {
+    const next = !invertMask;
+    atlasLoaderRef.current.invertMask = next;
+    setInvertMask(next);
+    atlasLoaderRef.current.clearCache();
+    setRenderTrigger((v) => v + 1);
+    updateAtlasPreview();
+  };
 
   // Load saved settings
   useEffect(() => {
@@ -976,6 +1115,7 @@ export const App: React.FC = () => {
         atlas = quant.previewCanvas;
       }
 
+      setAtlasFrames(framesForAtlas);
       setAtlasCanvas(atlas);
     } finally {
       isUpdatingAtlasRef.current = false;
@@ -1975,6 +2115,10 @@ export const App: React.FC = () => {
         hasMedia={hasMedia}
         activeFilename={activeFilename}
         fps={atlasSettings.fps}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
+        canUndo={canUndo}
+        canRedo={canRedo}
       />
 
       {/* 3-Column Body Layout (Left Sidebar | Viewport + Timeline | Right Sidebar) */}
@@ -2003,6 +2147,12 @@ export const App: React.FC = () => {
           atlasSettings={atlasSettings}
           onChangeAtlasSettings={setAtlasSettings}
           width={leftWidth}
+          onLoadMaskMedia={handleLoadMaskMedia}
+          onRemoveMaskMedia={handleRemoveMaskMedia}
+          maskFilename={maskFilename}
+          hasMaskMedia={hasMaskMedia}
+          invertMask={invertMask}
+          onToggleInvertMask={handleToggleInvertMask}
         />
 
         {/* Left Resizer Handle */}
@@ -2137,6 +2287,7 @@ export const App: React.FC = () => {
               <AtlasPreview
                 mode="atlas"
                 atlasCanvas={atlasCanvas}
+                atlasFrames={atlasFrames}
                 spritesCanvases={[]}
                 onExport={handleExport}
                 isExporting={isExporting}
@@ -2158,6 +2309,11 @@ export const App: React.FC = () => {
                 exportScope={exportScope}
                 masterTracksCount={tracks.filter((t) => t.enabled).length}
                 layoutMode={atlasSettings.layoutMode}
+                fps={atlasSettings.fps}
+                columns={atlasSettings.columns}
+                rows={atlasSettings.rows}
+                frameWidth={atlasSettings.frameWidth}
+                frameHeight={atlasSettings.frameHeight}
               />
             </>
           ) : (

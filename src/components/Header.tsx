@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { AppMode, BackgroundMode } from '../core/types';
-import { UploadCloud, Settings as SettingsIcon } from 'lucide-react';
+import { UploadCloud, Settings as SettingsIcon, Undo2, Redo2 } from 'lucide-react';
 
 interface HeaderProps {
   mode: AppMode;
@@ -17,6 +17,10 @@ interface HeaderProps {
   hasMedia: boolean;
   activeFilename: string;
   fps: number;
+  onUndo?: () => void;
+  onRedo?: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
 }
 
 const HeaderComponent: React.FC<HeaderProps> = ({
@@ -24,6 +28,10 @@ const HeaderComponent: React.FC<HeaderProps> = ({
   onOpenSettings,
   activeFilename,
   fps,
+  onUndo,
+  onRedo,
+  canUndo = false,
+  canRedo = false,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -82,6 +90,59 @@ const HeaderComponent: React.FC<HeaderProps> = ({
           >
             STUDIO
           </span>
+        </div>
+
+        {/* Undo / Redo Buttons */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 2,
+            background: 'var(--bg-card)',
+            padding: '2px 4px',
+            borderRadius: 6,
+            border: '1px solid var(--border-subtle)',
+            marginLeft: 4,
+          }}
+        >
+          <button
+            onClick={onUndo}
+            disabled={!canUndo}
+            title="Undo (Ctrl+Z)"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '4px',
+              opacity: canUndo ? 1 : 0.35,
+              cursor: canUndo ? 'pointer' : 'default',
+              color: canUndo ? 'var(--text-bright)' : 'var(--text-muted)',
+              background: 'transparent',
+              border: 'none',
+              borderRadius: 4,
+            }}
+          >
+            <Undo2 size={13} />
+          </button>
+          <button
+            onClick={onRedo}
+            disabled={!canRedo}
+            title="Redo (Ctrl+Shift+Z / Ctrl+Y)"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '4px',
+              opacity: canRedo ? 1 : 0.35,
+              cursor: canRedo ? 'pointer' : 'default',
+              color: canRedo ? 'var(--text-bright)' : 'var(--text-muted)',
+              background: 'transparent',
+              border: 'none',
+              borderRadius: 4,
+            }}
+          >
+            <Redo2 size={13} />
+          </button>
         </div>
       </div>
 

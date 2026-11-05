@@ -31,6 +31,12 @@ interface AtlasPreviewProps {
   destinationDir?: string;
   onSelectDestinationDir?: () => void;
   layoutMode?: 'grid' | 'advanced';
+  atlasFrames?: HTMLCanvasElement[];
+  fps?: number;
+  columns?: number;
+  rows?: number;
+  frameWidth?: number;
+  frameHeight?: number;
 }
 
 const AtlasPreviewComponent: React.FC<AtlasPreviewProps> = ({
@@ -57,6 +63,12 @@ const AtlasPreviewComponent: React.FC<AtlasPreviewProps> = ({
   destinationDir,
   onSelectDestinationDir,
   layoutMode = 'grid',
+  atlasFrames = [],
+  fps = 24,
+  columns,
+  rows,
+  frameWidth,
+  frameHeight,
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
@@ -188,7 +200,14 @@ const AtlasPreviewComponent: React.FC<AtlasPreviewProps> = ({
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         canvas={atlasCanvas}
+        frames={atlasFrames}
         filename={exportFilename}
+        fps={fps}
+        columns={columns}
+        rows={rows}
+        frameWidth={frameWidth}
+        frameHeight={frameHeight}
+        layoutMode={layoutMode}
       />
 
       {/* Export File Name Field */}

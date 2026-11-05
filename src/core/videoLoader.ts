@@ -21,9 +21,22 @@ export class VideoLoader {
   private offscreenCanvas: HTMLCanvasElement;
   private offscreenCtx: CanvasRenderingContext2D;
 
+  // Dual-Stream / Alpha Matte Track
+  public maskVideoElement: HTMLVideoElement | null = null;
+  public maskImageFiles: File[] = [];
+  public hasMaskMedia = false;
+  public maskFilename = '';
+  public invertMask = false;
+  private maskOffscreenCanvas: HTMLCanvasElement;
+  private maskOffscreenCtx: CanvasRenderingContext2D;
+
   constructor() {
     this.offscreenCanvas = document.createElement('canvas');
     this.offscreenCtx = this.offscreenCanvas.getContext('2d', {
+      willReadFrequently: true,
+    })!;
+    this.maskOffscreenCanvas = document.createElement('canvas');
+    this.maskOffscreenCtx = this.maskOffscreenCanvas.getContext('2d', {
       willReadFrequently: true,
     })!;
   }
@@ -255,7 +268,10 @@ export class VideoLoader {
       this.offscreenCanvas.height = img.naturalHeight;
       this.offscreenCtx.clearRect(0, 0, img.naturalWidth, img.naturalHeight);
       this.offscreenCtx.drawImage(img, 0, 0);
-      const data = this.offscreenCtx.getImageData(0, 0, img.naturalWidth, img.naturalHeight);
+      let data = this.offscreenCtx.getImageData(0, 0, img.naturalWidth, img.naturalHeight);
+      if (this.hasMaskMedia) {
+        data = await this.applyMatteIfActive(data, clampedIndex);
+      }
       this.frameCache.set(clampedIndex, data);
       return data;
     }
@@ -291,14 +307,17 @@ export class VideoLoader {
       const targetTime = targetIndex === 0 ? 0.001 : targetIndex / this.metadata.fps;
       const seekTime = Math.min(targetTime, Math.max(0, (video.duration || 0) - 0.001));
 
-      const capture = (): ImageData | null => {
+      const capture = async (): Promise<ImageData | null> => {
         if (this.offscreenCanvas.width !== video.videoWidth || this.offscreenCanvas.height !== video.videoHeight) {
           this.offscreenCanvas.width = video.videoWidth;
           this.offscreenCanvas.height = video.videoHeight;
         }
         this.offscreenCtx.drawImage(video, 0, 0);
-        const data = this.offscreenCtx.getImageData(0, 0, video.videoWidth, video.videoHeight);
+        let data = this.offscreenCtx.getImageData(0, 0, video.videoWidth, video.videoHeight);
         if (this.isFrameValid(data)) {
+          if (this.hasMaskMedia) {
+            data = await this.applyMatteIfActive(data, targetIndex);
+          }
           this.frameCache.set(targetIndex, data);
           return data;
         }
@@ -307,8 +326,7 @@ export class VideoLoader {
 
       // If already at seek time and video is ready
       if (Math.abs(video.currentTime - seekTime) < 0.003 && video.readyState >= 2) {
-        const data = capture();
-        this.finishSeek(data, resolve);
+        capture().then((data) => this.finishSeek(data, resolve));
         return;
       }
 
@@ -321,8 +339,7 @@ export class VideoLoader {
         clearTimeout(timeoutId);
         video.removeEventListener('seeked', onSeekComplete);
 
-        const data = capture();
-        this.finishSeek(data, resolve);
+        capture().then((data) => this.finishSeek(data, resolve));
       };
 
       timeoutId = setTimeout(onSeekComplete, 180);
@@ -359,6 +376,9 @@ export class VideoLoader {
   }
 
   public play(): Promise<void> {
+    if (this.maskVideoElement) {
+      this.maskVideoElement.play().catch(() => {});
+    }
     if (this.videoElement) {
       return this.videoElement.play();
     }
@@ -366,9 +386,141 @@ export class VideoLoader {
   }
 
   public pause(): void {
+    if (this.maskVideoElement) {
+      this.maskVideoElement.pause();
+    }
     if (this.videoElement) {
       this.videoElement.pause();
     }
+  }
+
+  public async loadMaskVideoFile(file: File): Promise<void> {
+    this.removeMaskMedia();
+    return new Promise((resolve, reject) => {
+      const video = document.createElement('video');
+      video.preload = 'auto';
+      video.muted = true;
+      video.playsInline = true;
+      video.setAttribute('playsinline', '');
+      video.setAttribute('webkit-playsinline', '');
+      video.style.position = 'fixed';
+      video.style.bottom = '0';
+      video.style.right = '0';
+      video.style.width = '1px';
+      video.style.height = '1px';
+      video.style.opacity = '0.01';
+      video.style.pointerEvents = 'none';
+      video.style.zIndex = '-9999';
+      document.body.appendChild(video);
+
+      const url = URL.createObjectURL(file);
+      video.src = url;
+
+      let resolved = false;
+      const onReady = () => {
+        if (resolved) return;
+        resolved = true;
+        this.maskVideoElement = video;
+        this.hasMaskMedia = true;
+        this.maskFilename = file.name;
+        this.frameCache.clear();
+        this.keyedFrameCache.clear();
+        resolve();
+      };
+
+      video.onloadedmetadata = onReady;
+      video.addEventListener('loadeddata', onReady, { once: true });
+      if (video.readyState >= 2) onReady();
+      video.onerror = () => reject(new Error('Failed to load mask video'));
+    });
+  }
+
+  public async loadMaskImageFiles(files: File[]): Promise<void> {
+    this.removeMaskMedia();
+    const sorted = Array.from(files).sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+    );
+    this.maskImageFiles = sorted;
+    this.hasMaskMedia = sorted.length > 0;
+    this.maskFilename = sorted[0]?.name || '';
+    this.frameCache.clear();
+    this.keyedFrameCache.clear();
+  }
+
+  public removeMaskMedia(): void {
+    if (this.maskVideoElement) {
+      this.maskVideoElement.pause();
+      this.maskVideoElement.removeAttribute('src');
+      this.maskVideoElement.load();
+      if (this.maskVideoElement.parentNode) {
+        this.maskVideoElement.parentNode.removeChild(this.maskVideoElement);
+      }
+      this.maskVideoElement = null;
+    }
+    this.maskImageFiles = [];
+    this.hasMaskMedia = false;
+    this.maskFilename = '';
+    this.frameCache.clear();
+    this.keyedFrameCache.clear();
+  }
+
+  public async getRawMaskFrame(frameIndex: number, targetW: number, targetH: number): Promise<ImageData | null> {
+    if (!this.hasMaskMedia) return null;
+
+    if (this.maskImageFiles.length > 0) {
+      const file = this.maskImageFiles[Math.min(frameIndex, this.maskImageFiles.length - 1)];
+      if (!file) return null;
+      const img = await this.loadImageElement(file);
+      this.maskOffscreenCanvas.width = targetW;
+      this.maskOffscreenCanvas.height = targetH;
+      this.maskOffscreenCtx.clearRect(0, 0, targetW, targetH);
+      this.maskOffscreenCtx.drawImage(img, 0, 0, targetW, targetH);
+      return this.maskOffscreenCtx.getImageData(0, 0, targetW, targetH);
+    }
+
+    if (this.maskVideoElement) {
+      const v = this.maskVideoElement;
+      const targetTime = frameIndex === 0 ? 0.001 : frameIndex / this.metadata.fps;
+      const seekTime = Math.min(targetTime, Math.max(0, (v.duration || 0) - 0.001));
+
+      if (Math.abs(v.currentTime - seekTime) > 0.01) {
+        await new Promise<void>((r) => {
+          let done = false;
+          const handler = () => {
+            if (!done) {
+              done = true;
+              v.removeEventListener('seeked', handler);
+              r();
+            }
+          };
+          v.addEventListener('seeked', handler);
+          v.currentTime = seekTime;
+          setTimeout(handler, 150);
+        });
+      }
+
+      this.maskOffscreenCanvas.width = targetW;
+      this.maskOffscreenCanvas.height = targetH;
+      this.maskOffscreenCtx.drawImage(v, 0, 0, targetW, targetH);
+      return this.maskOffscreenCtx.getImageData(0, 0, targetW, targetH);
+    }
+
+    return null;
+  }
+
+  private async applyMatteIfActive(data: ImageData, frameIndex: number): Promise<ImageData> {
+    if (!this.hasMaskMedia) return data;
+    const maskData = await this.getRawMaskFrame(frameIndex, data.width, data.height);
+    if (!maskData) return data;
+
+    const d = data.data;
+    const md = maskData.data;
+    const len = d.length;
+    for (let i = 0; i < len; i += 4) {
+      const luma = Math.round(0.299 * md[i] + 0.587 * md[i + 1] + 0.114 * md[i + 2]);
+      d[i + 3] = this.invertMask ? (255 - luma) : luma;
+    }
+    return data;
   }
 
   private loadImageElement(file: File): Promise<HTMLImageElement> {
@@ -393,6 +545,7 @@ export class VideoLoader {
   }
 
   public close() {
+    this.removeMaskMedia();
     if (this.videoElement) {
       this.videoElement.pause();
       this.videoElement.src = '';

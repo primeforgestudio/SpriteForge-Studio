@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ChromaKeySettings } from '../core/types';
-import { Pipette, Wand2, Sparkles, Bookmark, Plus, Trash2, Check } from 'lucide-react';
+import { Pipette, Wand2, Sparkles, Bookmark, Plus, Trash2, Check, ShieldCheck } from 'lucide-react';
 
 interface ChromaKeyPanelProps {
   settings: ChromaKeySettings;
@@ -914,6 +914,63 @@ const ChromaKeyPanelComponent: React.FC<ChromaKeyPanelProps> = ({
 
             <div style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: '1.3' }}>
               Reconstructs edge color from inner body pixels, removing green fringe on hair & weapons without eroding geometry.
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* TOPOLOGICAL BORDER CLEAN (BFS FLOOD-FILL NOISE ELIMINATOR) */}
+      <div style={{ marginTop: 8 }}>
+        <div
+          className="sidebar-section-title"
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <ShieldCheck size={12} color="var(--accent-orange)" />
+            <span>Topological Border Clean</span>
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 11, textTransform: 'none' }}>
+            <input
+              type="checkbox"
+              checked={settings.enableBorderClean ?? true}
+              onChange={(e) => update('enableBorderClean', e.target.checked)}
+              style={{ accentColor: 'var(--accent-orange)' }}
+            />
+            <span style={{ color: settings.enableBorderClean ?? true ? 'var(--accent-orange)' : 'var(--text-muted)' }}>
+              Enable
+            </span>
+          </label>
+        </div>
+
+        {(settings.enableBorderClean ?? true) && (
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
+              background: '#121316',
+              border: 'none',
+              borderRadius: 6,
+              padding: 10,
+            }}
+          >
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Alpha Noise Threshold</span>
+                {renderBadge(`${settings.borderCleanThreshold ?? 45}`)}
+              </div>
+              <input
+                type="range"
+                min={10}
+                max={120}
+                step={5}
+                value={settings.borderCleanThreshold ?? 45}
+                onChange={(e) => update('borderCleanThreshold', Number(e.target.value))}
+                style={{ width: '100%' }}
+              />
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: '1.3' }}>
+              Floods outer borders inward to wipe out floating green speckles and compression halo blocks without touching enclosed character holes.
             </div>
           </div>
         )}

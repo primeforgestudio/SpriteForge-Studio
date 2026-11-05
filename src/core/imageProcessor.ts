@@ -55,6 +55,12 @@ export class ImageProcessor {
           (settings.defringeStrength ?? 85) / 100
         );
       }
+      if (settings.enableBorderClean ?? true) {
+        this.applyTopologicalBorderClean(
+          result,
+          settings.borderCleanThreshold ?? 45
+        );
+      }
     }
     if (settings.garbageMatte?.enabled) {
       this.applyGarbageMatte(result, settings.garbageMatte);
@@ -155,6 +161,100 @@ export class ImageProcessor {
           data[idx] = Math.round(srcData[idx] * (1 - blend) + recR * blend);
           data[idx + 1] = Math.round(srcData[idx + 1] * (1 - blend) + recG * blend);
           data[idx + 2] = Math.round(srcData[idx + 2] * (1 - blend) + recB * blend);
+        }
+      }
+    }
+
+    return imageData;
+  }
+
+  /**
+   * Topological 4-Way BFS Outer Perimeter Flood Clean.
+   * Starts exclusively from outer border pixels (x=0, x=W-1, y=0, y=H-1) and
+   * floods through low-alpha noise and residual compression halo artifacts.
+   * Cleans floating debris completely to alpha=0, while strictly stopping
+   * at solid character silhouettes (alpha >= threshold). Internal enclosed cavities
+   * (e.g. gaps between character arms and torso) are never reached or modified!
+   */
+  public static applyTopologicalBorderClean(
+    imageData: ImageData,
+    alphaThreshold: number = 45
+  ): ImageData {
+    const { data, width, height } = imageData;
+    const total = width * height;
+    if (total === 0) return imageData;
+
+    const visited = new Uint8Array(total);
+    const queue = new Int32Array(total);
+    let head = 0;
+    let tail = 0;
+
+    // 1. Seed border pixels into BFS queue
+    for (let x = 0; x < width; x++) {
+      const topIdx = x;
+      const btmIdx = (height - 1) * width + x;
+      if (data[topIdx * 4 + 3] < 220) {
+        visited[topIdx] = 1;
+        queue[tail++] = topIdx;
+      }
+      if (data[btmIdx * 4 + 3] < 220) {
+        visited[btmIdx] = 1;
+        queue[tail++] = btmIdx;
+      }
+    }
+    for (let y = 1; y < height - 1; y++) {
+      const leftIdx = y * width;
+      const rightIdx = y * width + (width - 1);
+      if (!visited[leftIdx] && data[leftIdx * 4 + 3] < 220) {
+        visited[leftIdx] = 1;
+        queue[tail++] = leftIdx;
+      }
+      if (!visited[rightIdx] && data[rightIdx * 4 + 3] < 220) {
+        visited[rightIdx] = 1;
+        queue[tail++] = rightIdx;
+      }
+    }
+
+    // 2. BFS traversal inward through background fringe
+    while (head < tail) {
+      const idx = queue[head++];
+      const pAlpha = data[idx * 4 + 3];
+
+      // If connected to outer boundary and below threshold, zero it completely
+      if (pAlpha < alphaThreshold) {
+        data[idx * 4 + 3] = 0;
+      }
+
+      const px = idx % width;
+      const py = (idx / width) | 0;
+
+      // 4 neighbors
+      if (py > 0) {
+        const n = idx - width;
+        if (!visited[n] && data[n * 4 + 3] < alphaThreshold) {
+          visited[n] = 1;
+          queue[tail++] = n;
+        }
+      }
+      if (py < height - 1) {
+        const n = idx + width;
+        if (!visited[n] && data[n * 4 + 3] < alphaThreshold) {
+          visited[n] = 1;
+          queue[tail++] = n;
+        }
+      }
+      if (px > 0) {
+        const n = idx - 1;
+        if (!visited[n] && data[n * 4 + 3] < alphaThreshold) {
+          visited[n] = 1;
+          queue[tail++] = n;
+        }
+      }
+      if (px < width - 1) {
+        const n = idx + 1;
+        if (!visited[n] && data[n * 4 + 3] < alphaThreshold) {
+          visited[n] = 1;
+          queue[tail++] = n;
         }
       }
     }

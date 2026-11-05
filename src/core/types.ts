@@ -33,6 +33,9 @@ export interface ChromaKeySettings {
   defringe?: boolean; // default true
   defringeRadius?: number; // 1..6 px (default 2)
   defringeStrength?: number; // 0..100% (default 85)
+  // Topological Border Clean (BFS flood-fill noise/halo eliminator)
+  enableBorderClean?: boolean; // default true
+  borderCleanThreshold?: number; // 10..120, default 45
 }
 
 export interface GarbageMatteSettings {

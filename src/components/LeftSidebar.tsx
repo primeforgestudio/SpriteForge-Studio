@@ -11,6 +11,7 @@ import {
   ArrowUp,
   ArrowDown,
   Check,
+  Trash2,
 } from 'lucide-react';
 import { ChromaKeyPanel } from './ChromaKeyPanel';
 import { AiCleanupPanel } from './AiCleanupPanel';
@@ -52,6 +53,13 @@ interface LeftSidebarProps {
   atlasSettings: AtlasSettings;
   onChangeAtlasSettings: (settings: AtlasSettings) => void;
   width?: number;
+  // Dual-Stream Matte Props
+  onLoadMaskMedia?: (file: File) => void;
+  onRemoveMaskMedia?: () => void;
+  maskFilename?: string;
+  hasMaskMedia?: boolean;
+  invertMask?: boolean;
+  onToggleInvertMask?: () => void;
 }
 
 const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
@@ -77,6 +85,12 @@ const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
   atlasSettings,
   onChangeAtlasSettings,
   width,
+  onLoadMaskMedia,
+  onRemoveMaskMedia,
+  maskFilename = '',
+  hasMaskMedia = false,
+  invertMask = false,
+  onToggleInvertMask,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<LeftSidebarTab>('media');
@@ -466,6 +480,136 @@ const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
         {/* TAB: KEYLIGHT */}
         {activeTab === 'keylight' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {/* DUAL-STREAM / ALPHA MATTE PASS */}
+            <div
+              style={{
+                background: '#121316',
+                padding: 10,
+                borderRadius: 6,
+                border: '1px solid var(--border-subtle)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <Film size={12} color="var(--accent-orange)" />
+                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-bright)' }}>
+                    Dual-Stream Matte Pass
+                  </span>
+                </div>
+                {hasMaskMedia && (
+                  <span
+                    style={{
+                      fontSize: 9,
+                      background: 'rgba(0, 229, 255, 0.15)',
+                      color: '#00e5ff',
+                      padding: '1px 5px',
+                      borderRadius: 4,
+                      fontWeight: 700,
+                    }}
+                  >
+                    ACTIVE
+                  </span>
+                )}
+              </div>
+
+              {hasMaskMedia ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      background: 'rgba(0,0,0,0.3)',
+                      padding: '4px 8px',
+                      borderRadius: 4,
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: 11,
+                        color: 'var(--text-bright)',
+                        fontFamily: 'monospace',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        maxWidth: 180,
+                      }}
+                    >
+                      {maskFilename}
+                    </span>
+                    <button
+                      onClick={onRemoveMaskMedia}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#ff4d4d',
+                        cursor: 'pointer',
+                        padding: 2,
+                      }}
+                      title="Remove Matte"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      cursor: 'pointer',
+                      fontSize: 11,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={invertMask}
+                      onChange={onToggleInvertMask}
+                      style={{ accentColor: 'var(--accent-orange)' }}
+                    />
+                    <span style={{ color: 'var(--text-muted)' }}>Invert Matte (Black = Opaque)</span>
+                  </label>
+                </div>
+              ) : (
+                <div>
+                  <input
+                    type="file"
+                    id="matte-file-input"
+                    accept="video/*,image/*"
+                    style={{ display: 'none' }}
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files[0] && onLoadMaskMedia) {
+                        onLoadMaskMedia(e.target.files[0]);
+                      }
+                    }}
+                  />
+                  <button
+                    onClick={() => document.getElementById('matte-file-input')?.click()}
+                    style={{
+                      width: '100%',
+                      height: 28,
+                      fontSize: 10,
+                      fontWeight: 600,
+                      background: '#2B2D37',
+                      border: '1px dashed #444',
+                      borderRadius: 5,
+                      color: 'var(--text-muted)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 5,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <Plus size={11} />
+                    <span>Load Alpha Matte Video / Mask</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
             <ChromaKeyPanel
               settings={keyingSettings}
               onChange={onChangeKeying}

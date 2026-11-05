@@ -37,6 +37,8 @@ export const DEFAULT_KEYING: ChromaKeySettings = {
   defringe: true,
   defringeRadius: 2,
   defringeStrength: 85,
+  enableBorderClean: true,
+  borderCleanThreshold: 45,
 };
 
 export const DEFAULT_ATLAS: AtlasSettings = {

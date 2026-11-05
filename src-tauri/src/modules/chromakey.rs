@@ -1,5 +1,9 @@
 use serde::{Deserialize, Serialize};
 
+fn default_border_clean_thresh() -> u8 {
+    45
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChromaKeyConfig {
     pub enabled: bool,
@@ -13,10 +17,13 @@ pub struct ChromaKeyConfig {
     pub defringe: bool,
     pub defringe_radius: u32,     // 1..6
     pub defringe_strength: f32,   // 0..100
+    #[serde(default)]
+    pub enable_border_clean: bool,
+    #[serde(default = "default_border_clean_thresh")]
+    pub border_clean_threshold: u8,
 }
 
 /// Keylight Color Difference Keying implementation in Rust.
-/// Runs in parallel across rows for maximum performance.
 pub fn apply_chroma_key(
     rgba: &mut [u8],
     width: u32,
@@ -87,6 +94,99 @@ pub fn apply_chroma_key(
             rgba[idx + 1] = g.round().clamp(0.0, 255.0) as u8;
             rgba[idx + 2] = b.round().clamp(0.0, 255.0) as u8;
             rgba[idx + 3] = (alpha_f * 255.0).round().clamp(0.0, 255.0) as u8;
+        }
+    }
+
+    // 4. Topological outer border clean
+    if config.enable_border_clean {
+        apply_topological_border_clean(rgba, width, height, config.border_clean_threshold);
+    }
+}
+
+/// 4-Way BFS Outer Perimeter Flood Clean in Rust.
+pub fn apply_topological_border_clean(
+    rgba: &mut [u8],
+    width: u32,
+    height: u32,
+    threshold: u8,
+) {
+    let w = width as usize;
+    let h = height as usize;
+    let total = w * h;
+    if total == 0 {
+        return;
+    }
+
+    let mut visited = vec![false; total];
+    let mut queue = std::collections::VecDeque::with_capacity(total / 4);
+
+    // 1. Seed border pixels into BFS queue
+    for x in 0..w {
+        let top = x;
+        let btm = (h - 1) * w + x;
+        if rgba[top * 4 + 3] < 220 {
+            visited[top] = true;
+            queue.push_back(top);
+        }
+        if rgba[btm * 4 + 3] < 220 {
+            visited[btm] = true;
+            queue.push_back(btm);
+        }
+    }
+    for y in 1..(h - 1) {
+        let left = y * w;
+        let right = y * w + (w - 1);
+        if !visited[left] && rgba[left * 4 + 3] < 220 {
+            visited[left] = true;
+            queue.push_back(left);
+        }
+        if !visited[right] && rgba[right * 4 + 3] < 220 {
+            visited[right] = true;
+            queue.push_back(right);
+        }
+    }
+
+    // 2. BFS inward through low-alpha pixels
+    while let Some(idx) = queue.pop_front() {
+        let alpha = rgba[idx * 4 + 3];
+        if alpha < threshold {
+            rgba[idx * 4 + 3] = 0;
+        }
+
+        let px = idx % w;
+        let py = idx / w;
+
+        // Up
+        if py > 0 {
+            let n = idx - w;
+            if !visited[n] && rgba[n * 4 + 3] < threshold {
+                visited[n] = true;
+                queue.push_back(n);
+            }
+        }
+        // Down
+        if py < h - 1 {
+            let n = idx + w;
+            if !visited[n] && rgba[n * 4 + 3] < threshold {
+                visited[n] = true;
+                queue.push_back(n);
+            }
+        }
+        // Left
+        if px > 0 {
+            let n = idx - 1;
+            if !visited[n] && rgba[n * 4 + 3] < threshold {
+                visited[n] = true;
+                queue.push_back(n);
+            }
+        }
+        // Right
+        if px < w - 1 {
+            let n = idx + 1;
+            if !visited[n] && rgba[n * 4 + 3] < threshold {
+                visited[n] = true;
+                queue.push_back(n);
+            }
         }
     }
 }
