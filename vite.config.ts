@@ -3,9 +3,11 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
-  base: './', // Relative base for standalone local opening or GitHub pages
+  base: './',
+  clearScreen: false,
   server: {
     port: 5173,
+    strictPort: true,
     open: false
   }
 });

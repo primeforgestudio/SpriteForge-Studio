@@ -12,4 +12,4 @@ if [ ! -f "dist/index.html" ]; then
     npm run build
 fi
 
-npx electron .
+npm run tauri:dev
