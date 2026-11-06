@@ -45,47 +45,28 @@ const HeaderComponent: React.FC<HeaderProps> = ({
     <header className="top-header">
       {/* Left: Brand Logo & Title */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        {/* Matte Orange "SF" Logo Badge */}
-        <div
-          style={{
-            width: 24,
-            height: 24,
-            borderRadius: 6,
-            backgroundColor: 'var(--accent-orange)',
-            color: '#ffffff',
-            fontWeight: 800,
-            fontSize: 12,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: 'none',
-            letterSpacing: '-0.5px',
-          }}
-        >
-          SF
-        </div>
-
+        {/* New Official Brand Logo & Studio Pill */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span
+          <img
+            src="/logo.png"
+            alt="SpriteForge"
             style={{
-              fontWeight: 800,
-              fontSize: 13,
-              color: 'var(--text-bright)',
-              letterSpacing: '1px',
+              height: 22,
+              width: 'auto',
+              objectFit: 'contain',
+              display: 'block',
             }}
-          >
-            SPRITEFORGE
-          </span>
+          />
           <span
             style={{
               fontSize: 9,
-              fontWeight: 700,
+              fontWeight: 800,
               background: 'rgba(255, 92, 38, 0.12)',
               color: 'var(--accent-orange)',
               border: '1px solid rgba(255, 92, 38, 0.3)',
               padding: '1px 5px',
               borderRadius: 4,
-              letterSpacing: '0.5px',
+              letterSpacing: '0.6px',
             }}
           >
             STUDIO

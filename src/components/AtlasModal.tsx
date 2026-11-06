@@ -586,22 +586,16 @@ export const AtlasModal: React.FC<AtlasModalProps> = ({
       >
         {/* Title and Metadata Pill */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div
+          <img
+            src="/icon.png"
+            alt="SpriteForge"
             style={{
-              width: 24,
-              height: 24,
-              borderRadius: 6,
-              backgroundColor: 'var(--accent-orange)',
-              color: '#ffffff',
-              fontWeight: 800,
-              fontSize: 11,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
+              width: 22,
+              height: 22,
+              objectFit: 'contain',
+              display: 'block',
             }}
-          >
-            SF
-          </div>
+          />
           <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: '0.5px', color: 'var(--text-bright)' }}>
             ATLAS STUDIO & INSPECTOR
           </span>

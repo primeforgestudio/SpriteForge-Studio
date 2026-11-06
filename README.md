@@ -1,7 +1,13 @@
-# SpriteForge Studio 2.0
+<p align="center">
+  <img src="logo.png" alt="SpriteForge Studio Logo" width="450" />
+</p>
 
-> **Native Desktop Workstation for AI Video to 2D Game Sprite Sheets & Atlases**  
-> Built with **Tauri 2.0 + Rust**, React 18, and TypeScript. Zero Python or heavy ML runtimes required.
+<h1 align="center">SpriteForge Studio 2.0</h1>
+
+<p align="center">
+  <strong>Native Desktop Workstation for AI Video to 2D Game Sprite Sheets & Atlases</strong><br>
+  Built with <b>Tauri 2.0 + Rust</b>, React 18, and TypeScript. Zero Python or heavy ML runtimes required.
+</p>
 
 ---
 
