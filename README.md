@@ -25,7 +25,7 @@
 * **Non-Destructive Trimming & Scrubbing**:
   * In/Out crop points for frame ranges.
   * Instant keyframe distribution across animation cycles (`12`, `15`, `24`, `30`, `60` FPS).
-* **Keylight 1.2 Chroma Keying & Color Suppression**:
+* **Advanced Chroma Keying & Color Suppression**:
   * Real-time eyedropper for primary and secondary key colors.
   * Screen Gain, Balance, Clip Black, Clip White, Soften controls.
   * Despill suppression with Warm-Safe skin tone protection.
@@ -109,7 +109,7 @@ src-tauri\target\release\app.exe
 
 * **Frontend**: React 18, TypeScript, Lucide Icons, Vite 5, Canvas 2D / WebGL.
 * **Core Engine**: Tauri 2.0, Rust (`src-tauri/src/modules/`):
-  * `chromakey.rs`: Parallel Keylight color difference keying & BFS topological cleaning.
+  * `chromakey.rs`: Parallel chroma keying & BFS topological cleaning.
   * `pbr.rs`: Tangent-space Sobel normal maps and PBR textures.
   * `mesh.rs`: 2D silhouette mesh triangulation.
   * `atlas.rs`: Bounding box detection and bin-packing.
