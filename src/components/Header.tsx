@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { AppMode, BackgroundMode } from '../core/types';
-import { UploadCloud, Settings as SettingsIcon, Undo2, Redo2 } from 'lucide-react';
+import { UploadCloud, Settings as SettingsIcon, Undo2, Redo2, Heart } from 'lucide-react';
 
 interface HeaderProps {
   mode: AppMode;
@@ -8,6 +8,7 @@ interface HeaderProps {
   onLoadFiles: (files: FileList) => void;
   onExport: () => void;
   onOpenSettings: () => void;
+  onOpenSupport?: () => void;
   bgMode: BackgroundMode;
   setBgMode: (mode: BackgroundMode) => void;
   bgColor: [number, number, number];
@@ -26,6 +27,7 @@ interface HeaderProps {
 const HeaderComponent: React.FC<HeaderProps> = ({
   onLoadFiles,
   onOpenSettings,
+  onOpenSupport,
   activeFilename,
   fps,
   onUndo,
@@ -162,8 +164,8 @@ const HeaderComponent: React.FC<HeaderProps> = ({
         <div style={{ width: 10 }} />
       )}
 
-      {/* Right: Load Media & Settings */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      {/* Right: Support, Settings & Load Media */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <input
           type="file"
           ref={fileInputRef}
@@ -172,6 +174,31 @@ const HeaderComponent: React.FC<HeaderProps> = ({
           accept="video/*,image/*"
           style={{ display: 'none' }}
         />
+
+        {/* Support Project Button */}
+        {onOpenSupport && (
+          <button
+            onClick={onOpenSupport}
+            title="Support SpriteForge Studio"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              padding: '5px 10px',
+              background: 'rgba(255, 92, 38, 0.12)',
+              border: '1px solid rgba(255, 92, 38, 0.35)',
+              color: 'var(--accent-orange)',
+              borderRadius: 6,
+              fontSize: 11,
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <Heart size={13} fill="currentColor" />
+            <span>Support</span>
+          </button>
+        )}
 
         <button onClick={onOpenSettings} title="Settings" style={{ padding: '6px' }}>
           <SettingsIcon size={14} style={{ color: 'var(--text-muted)' }} />

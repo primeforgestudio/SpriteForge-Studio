@@ -35,6 +35,7 @@ import { AtlasPanel } from './components/AtlasPanel';
 import { SpritesPanel } from './components/SpritesPanel';
 import { AtlasPreview } from './components/AtlasPreview';
 import { SettingsModal } from './components/SettingsModal';
+import { SupportModal } from './components/SupportModal';
 
 export const App: React.FC = () => {
   // App Mode & Settings
@@ -83,6 +84,7 @@ export const App: React.FC = () => {
   const [isLooping, setIsLooping] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isSupportOpen, setIsSupportOpen] = useState(false);
   const [statePreset, setStatePreset] = useState<StatePreset>('standard');
   const [isAutoCropping, setIsAutoCropping] = useState(false);
   const [exportFilename, setExportFilename] = useState('character_atlas');
@@ -2106,6 +2108,7 @@ export const App: React.FC = () => {
         onLoadFiles={handleLoadFiles}
         onExport={handleExport}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenSupport={() => setIsSupportOpen(true)}
         bgMode={bgMode}
         setBgMode={setBgMode}
         bgColor={bgColor}
@@ -2374,6 +2377,12 @@ export const App: React.FC = () => {
           setSpritesSettings(DEFAULT_SPRITES);
           setBgPresets(DEFAULT_BG_PRESETS);
         }}
+      />
+
+      {/* Support Project Modal */}
+      <SupportModal
+        isOpen={isSupportOpen}
+        onClose={() => setIsSupportOpen(false)}
       />
 
       {/* Export Success Notification Toast */}

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.png" alt="SpriteForge Studio Logo" width="450" />
+  <img src="public/logo.png" alt="SpriteForge Studio Logo" width="450" />
 </p>
 
 <h1 align="center">SpriteForge Studio 2.0</h1>
@@ -7,6 +7,13 @@
 <p align="center">
   <strong>Native Desktop Workstation for AI Video to 2D Game Sprite Sheets & Atlases</strong><br>
   Built with <b>Tauri 2.0 + Rust</b>, React 18, and TypeScript. Zero Python or heavy ML runtimes required.
+</p>
+
+<p align="center">
+  <a href="https://www.patreon.com/primeforgestudio"><img src="https://img.shields.io/badge/Patreon-Support-orange?style=flat&logo=patreon" alt="Patreon" /></a>
+  <img src="https://img.shields.io/badge/USDT%20(TRC--20)-Supported-26a17b?style=flat&logo=tether" alt="USDT Supported" />
+  <img src="https://img.shields.io/badge/Platform-Windows%20x64-blue?style=flat&logo=windows" alt="Windows" />
+  <img src="https://img.shields.io/badge/License-MIT-green?style=flat" alt="MIT License" />
 </p>
 
 ---
@@ -56,6 +63,20 @@
 
 ### ↩️ History Management
 * Full 50-step undo/redo stack (`Ctrl+Z`, `Ctrl+Shift+Z` / `Ctrl+Y`) covering all keying, cropping, and atlas layout changes.
+
+---
+
+## 💖 Support the Project
+
+SpriteForge Studio is **100% Free and Open-Source**. If it saves you time and powers your game development workflow, consider supporting ongoing development:
+
+* **Patreon**: [patreon.com/primeforgestudio](https://www.patreon.com/primeforgestudio) *(Credit Cards / PayPal)*
+* **Crypto Tip (USDT TRC-20)**:
+  ```text
+  TP4teMUZ56aLrNT1DPzm8N42y4fjEY4WCi
+  ```
+  *(Network: TRON / TRC-20 — Bybit, Binance, Trust Wallet, etc.)*
+* **Star on GitHub**: Give us a ⭐ on GitHub to help more developers discover the project!
 
 ---
 
