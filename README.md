@@ -2,7 +2,7 @@
   <img src="public/logo.png" alt="SpriteForge Studio Logo" width="450" />
 </p>
 
-<h1 align="center">SpriteForge Studio 2.0</h1>
+<h1 align="center">SpriteForge Studio</h1>
 
 <p align="center">
   <strong>Native Desktop Workstation for AI Video to 2D Game Sprite Sheets & Atlases</strong><br>
