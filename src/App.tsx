@@ -28,6 +28,8 @@ import {
 import { WebGLKeyer } from './core/webglKeyer';
 import { globalHistory } from './core/history';
 import { FolderCheck } from 'lucide-react';
+import { ProjectManager } from './core/projectManager';
+import { SpriteForgeProject } from './core/types';
 import { Header } from './components/Header';
 import { LeftSidebar, LoadedFileItem } from './components/LeftSidebar';
 import { Viewport } from './components/Viewport';
@@ -53,6 +55,14 @@ export const App: React.FC = () => {
   const [tracks, setTracks] = useState<AnimationTrack[]>([]);
   const [selectedTrackId, setSelectedTrackId] = useState<string>('');
   const [exportScope, setExportScope] = useState<ExportScope>('single');
+
+  // Project Save / Open State (.sfproj)
+  const [projectName, setProjectName] = useState<string>('');
+  const [currentProjectFilePath, setCurrentProjectFilePath] = useState<string | null>(null);
+  const [isSavingProject, setIsSavingProject] = useState<boolean>(false);
+  const handleSaveProjectRef = useRef<() => void>(() => {});
+  const handleOpenProjectRef = useRef<() => void>(() => {});
+  const loadProjectStateRef = useRef<((project: SpriteForgeProject, filePath?: string) => Promise<void>) | null>(null);
 
   // Loaded Media Files list (Left Sidebar)
   const [loadedFiles, setLoadedFiles] = useState<LoadedFileItem[]>([]);
@@ -269,7 +279,13 @@ export const App: React.FC = () => {
       const target = e.target as HTMLElement;
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName)) return;
 
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        handleSaveProjectRef.current();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
+        e.preventDefault();
+        handleOpenProjectRef.current();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         if (e.shiftKey) {
           handleRedo();
@@ -1397,9 +1413,25 @@ export const App: React.FC = () => {
         e.dataTransfer.dropEffect = 'copy';
       }
     };
-    const handleWindowDrop = (e: DragEvent) => {
+    const handleWindowDrop = async (e: DragEvent) => {
       e.preventDefault();
       if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        const firstFile = e.dataTransfer.files[0];
+        if (
+          firstFile.name.endsWith('.sfproj') ||
+          (firstFile.name.endsWith('.json') && firstFile.size < 50 * 1024 * 1024)
+        ) {
+          try {
+            const text = await firstFile.text();
+            const project = ProjectManager.parseProjectContent(text);
+            if (project && loadProjectStateRef.current) {
+              await loadProjectStateRef.current(project, firstFile.name);
+              return;
+            }
+          } catch (err) {
+            console.warn('Failed to parse dropped project:', err);
+          }
+        }
         handleLoadFiles(e.dataTransfer.files);
       }
     };
@@ -1526,6 +1558,128 @@ export const App: React.FC = () => {
       return remaining;
     });
   };
+
+  // ==========================================
+  // SPRITEFORGE PROJECT SYSTEM (.sfproj)
+  // ==========================================
+  const loadProjectState = async (project: SpriteForgeProject, filePath?: string) => {
+    try {
+      if (project.appMode) setMode(project.appMode);
+      if (project.exportScope) setExportScope(project.exportScope);
+      if (project.exportFilename) setExportFilename(project.exportFilename);
+      if (project.keyingSettings) setKeyingSettings(project.keyingSettings);
+      if (project.atlasSettings) setAtlasSettings(project.atlasSettings);
+      if (project.spritesSettings) setSpritesSettings(project.spritesSettings);
+      if (project.maskFilename !== undefined) setMaskFilename(project.maskFilename);
+      if (project.invertMask !== undefined) setInvertMask(project.invertMask);
+
+      // Reconstruct tracks and media
+      const restoredTracks: AnimationTrack[] = [];
+      for (const t of project.tracks) {
+        const fileRef = await ProjectManager.reconstructTrackFile(t);
+        restoredTracks.push({
+          ...t,
+          fileRef: fileRef || undefined,
+          cropBox: t.cropBox ?? null,
+        });
+      }
+
+      setTracks(restoredTracks);
+
+      // Restore active track
+      const targetTrackId = project.selectedTrackId || (restoredTracks[0]?.id ?? '');
+      if (targetTrackId) {
+        const targetTrack = restoredTracks.find((t) => t.id === targetTrackId) || restoredTracks[0];
+        if (targetTrack) {
+          setSelectedTrackId(targetTrack.id);
+          setSelectedFileId(targetTrack.id);
+          setCropStart(targetTrack.cropStart || 0);
+          setCropEnd(targetTrack.cropEnd || (targetTrack.totalFrames ? targetTrack.totalFrames - 1 : 0));
+          setMarkers(targetTrack.markers || [0]);
+          setCurrentFrame(project.currentFrame || targetTrack.cropStart || 0);
+
+          if (targetTrack.fileRef) {
+            await atlasLoaderRef.current.loadVideoFile(
+              targetTrack.fileRef,
+              targetTrack.fps || project.atlasSettings?.fps || 24
+            );
+            await renderAtlasFrame(project.currentFrame || targetTrack.cropStart || 0);
+            updateAtlasPreview();
+          }
+        }
+      }
+
+      if (filePath) {
+        setCurrentProjectFilePath(filePath);
+        const baseName = filePath.split(/[\\/]/).pop() || filePath;
+        setProjectName(baseName);
+      } else {
+        setProjectName(project.name || 'Untitled_Project.sfproj');
+      }
+
+      setExportToast(`✓ Loaded Project "${project.name}"`);
+      setTimeout(() => setExportToast(null), 4000);
+    } catch (err: any) {
+      alert(`Error loading project: ${err.message}`);
+    }
+  };
+
+  const handleSaveProject = async () => {
+    if (isSavingProject) return;
+    setIsSavingProject(true);
+    try {
+      const activeName = (projectName || exportFilename || 'SpriteForge_Project').replace(/\.sfproj$/i, '');
+      const project = await ProjectManager.serializeProject({
+        projectName: activeName,
+        appMode: mode,
+        exportScope,
+        exportFilename,
+        keyingSettings,
+        atlasSettings,
+        spritesSettings,
+        tracks,
+        selectedTrackId,
+        currentFrame,
+        maskFilename,
+        invertMask,
+        embedMedia: true,
+      });
+
+      const res = await ProjectManager.saveProject(project, currentProjectFilePath || activeName);
+      if (res.canceled) return;
+      if (res.success && res.filePath) {
+        setCurrentProjectFilePath(res.filePath);
+        const baseName = res.filePath.split(/[\\/]/).pop() || res.filePath;
+        setProjectName(baseName);
+        setExportToast(`✓ Project saved to "${baseName}"`);
+        setTimeout(() => setExportToast(null), 4000);
+      } else if (res.error) {
+        alert(`Failed to save project: ${res.error}`);
+      }
+    } catch (e: any) {
+      alert(`Error saving project: ${e.message}`);
+    } finally {
+      setIsSavingProject(false);
+    }
+  };
+
+  const handleOpenProject = async () => {
+    try {
+      const res = await ProjectManager.openProject();
+      if (res.canceled) return;
+      if (res.success && res.project) {
+        await loadProjectState(res.project, res.filePath);
+      } else if (res.error) {
+        alert(`Failed to open project: ${res.error}`);
+      }
+    } catch (e: any) {
+      alert(`Error opening project: ${e.message}`);
+    }
+  };
+
+  loadProjectStateRef.current = loadProjectState;
+  handleSaveProjectRef.current = handleSaveProject;
+  handleOpenProjectRef.current = handleOpenProject;
 
   // Export Action
   const handleExport = async () => {
@@ -2278,6 +2432,10 @@ export const App: React.FC = () => {
         onRedo={handleRedo}
         canUndo={canUndo}
         canRedo={canRedo}
+        onOpenProject={handleOpenProject}
+        onSaveProject={handleSaveProject}
+        projectName={projectName}
+        isSavingProject={isSavingProject}
       />
 
       {/* 3-Column Body Layout (Left Sidebar | Viewport + Timeline | Right Sidebar) */}

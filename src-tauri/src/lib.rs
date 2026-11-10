@@ -111,6 +111,94 @@ pub struct NativeExportResult {
     pub count: usize,
 }
 
+#[derive(serde::Serialize)]
+pub struct NativeProjectDialogResult {
+    pub success: bool,
+    pub file_path: Option<String>,
+    pub content: Option<String>,
+    pub error: Option<String>,
+    pub canceled: bool,
+}
+
+#[tauri::command]
+fn save_project_file_native_cmd(
+    default_name: Option<String>,
+    content: String,
+) -> NativeProjectDialogResult {
+    let mut dialog = rfd::FileDialog::new()
+        .set_title("Save SpriteForge Project")
+        .add_filter("SpriteForge Project (*.sfproj)", &["sfproj", "json"]);
+
+    let name = default_name.unwrap_or_else(|| "project.sfproj".to_string());
+    dialog = dialog.set_file_name(&name);
+
+    if let Some(path) = dialog.save_file() {
+        match std::fs::write(&path, content.as_bytes()) {
+            Ok(_) => NativeProjectDialogResult {
+                success: true,
+                file_path: Some(path.to_string_lossy().to_string()),
+                content: None,
+                error: None,
+                canceled: false,
+            },
+            Err(e) => NativeProjectDialogResult {
+                success: false,
+                file_path: None,
+                content: None,
+                error: Some(format!("Failed to save project: {}", e)),
+                canceled: false,
+            },
+        }
+    } else {
+        NativeProjectDialogResult {
+            success: false,
+            file_path: None,
+            content: None,
+            error: None,
+            canceled: true,
+        }
+    }
+}
+
+#[tauri::command]
+fn open_project_file_native_cmd() -> NativeProjectDialogResult {
+    let dialog = rfd::FileDialog::new()
+        .set_title("Open SpriteForge Project")
+        .add_filter("SpriteForge Project (*.sfproj, *.json)", &["sfproj", "json"]);
+
+    if let Some(path) = dialog.pick_file() {
+        match std::fs::read_to_string(&path) {
+            Ok(content) => NativeProjectDialogResult {
+                success: true,
+                file_path: Some(path.to_string_lossy().to_string()),
+                content: Some(content),
+                error: None,
+                canceled: false,
+            },
+            Err(e) => NativeProjectDialogResult {
+                success: false,
+                file_path: None,
+                content: None,
+                error: Some(format!("Failed to read project file: {}", e)),
+                canceled: false,
+            },
+        }
+    } else {
+        NativeProjectDialogResult {
+            success: false,
+            file_path: None,
+            content: None,
+            error: None,
+            canceled: true,
+        }
+    }
+}
+
+#[tauri::command]
+fn read_media_file_bytes_cmd(file_path: String) -> Result<Vec<u8>, String> {
+    std::fs::read(&file_path).map_err(|e| format!("Failed to read media {}: {}", file_path, e))
+}
+
 #[tauri::command]
 fn pick_export_directory_cmd(default_path: Option<String>) -> Option<String> {
     let mut dialog = rfd::FileDialog::new().set_title("Select Destination Directory for Sprite Export");
@@ -202,7 +290,10 @@ pub fn run() {
             generate_mesh_cmd,
             generate_godot_tres_cmd,
             pick_export_directory_cmd,
-            save_export_files_native_cmd
+            save_export_files_native_cmd,
+            save_project_file_native_cmd,
+            open_project_file_native_cmd,
+            read_media_file_bytes_cmd
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

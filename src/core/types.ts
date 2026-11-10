@@ -222,7 +222,9 @@ export interface AnimationTrack {
   id: string;
   name: string; // Animation identifier (e.g. "idle", "run", "attack")
   fileName: string;
+  filePath?: string;
   fileRef?: File;
+  mediaBase64?: string;
   thumbnailUrl?: string;
   totalFrames: number;
   cropStart: number;
@@ -233,4 +235,38 @@ export interface AnimationTrack {
   enabled: boolean;
   cropBox?: { x: number; y: number; width: number; height: number } | null;
   directionLabel?: string;
+}
+
+export interface SpriteForgeProject {
+  format: 'spriteforge-project';
+  version: '1.0.0';
+  name: string;
+  savedAt: string;
+  appMode: AppMode;
+  exportScope: ExportScope;
+  exportFilename: string;
+  keyingSettings: ChromaKeySettings;
+  atlasSettings: AtlasSettings;
+  spritesSettings: SpritesSettings;
+  tracks: Array<{
+    id: string;
+    name: string;
+    fileName: string;
+    filePath?: string;
+    mediaBase64?: string;
+    thumbnailUrl?: string;
+    totalFrames: number;
+    cropStart: number;
+    cropEnd: number;
+    markers: number[];
+    fps: number;
+    loop: boolean;
+    enabled: boolean;
+    cropBox?: { x: number; y: number; width: number; height: number } | null;
+    directionLabel?: string;
+  }>;
+  selectedTrackId?: string;
+  currentFrame?: number;
+  maskFilename?: string;
+  invertMask?: boolean;
 }

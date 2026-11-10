@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { AppMode, BackgroundMode } from '../core/types';
-import { UploadCloud, Settings as SettingsIcon, Undo2, Redo2, Heart } from 'lucide-react';
+import { UploadCloud, Settings as SettingsIcon, Undo2, Redo2, Heart, FolderOpen, Save } from 'lucide-react';
 
 interface HeaderProps {
   mode: AppMode;
@@ -22,6 +22,10 @@ interface HeaderProps {
   onRedo?: () => void;
   canUndo?: boolean;
   canRedo?: boolean;
+  onOpenProject?: () => void;
+  onSaveProject?: () => void;
+  projectName?: string;
+  isSavingProject?: boolean;
 }
 
 const HeaderComponent: React.FC<HeaderProps> = ({
@@ -34,6 +38,10 @@ const HeaderComponent: React.FC<HeaderProps> = ({
   onRedo,
   canUndo = false,
   canRedo = false,
+  onOpenProject,
+  onSaveProject,
+  projectName,
+  isSavingProject = false,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -127,6 +135,95 @@ const HeaderComponent: React.FC<HeaderProps> = ({
             <Redo2 size={13} />
           </button>
         </div>
+
+        {/* Project Actions: Open & Save (.sfproj) */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 2,
+            background: 'var(--bg-card)',
+            padding: '2px 3px',
+            borderRadius: 6,
+            border: '1px solid var(--border-subtle)',
+            marginLeft: 2,
+          }}
+        >
+          {onOpenProject && (
+            <button
+              onClick={onOpenProject}
+              title="Open Project (Ctrl+O)"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '3px 7px',
+                fontSize: 11,
+                fontWeight: 600,
+                color: 'var(--text-bright)',
+                background: 'transparent',
+                border: 'none',
+                borderRadius: 4,
+                cursor: 'pointer',
+              }}
+            >
+              <FolderOpen size={13} style={{ color: '#FF551F' }} />
+              <span>Open</span>
+            </button>
+          )}
+
+          {onSaveProject && (
+            <button
+              onClick={onSaveProject}
+              disabled={isSavingProject}
+              title="Save Project (Ctrl+S)"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '3px 8px',
+                fontSize: 11,
+                fontWeight: 700,
+                color: '#ffffff',
+                background: '#FF551F',
+                border: 'none',
+                borderRadius: 4,
+                cursor: isSavingProject ? 'wait' : 'pointer',
+                opacity: isSavingProject ? 0.7 : 1,
+                boxShadow: '0 1px 4px rgba(255, 85, 31, 0.4)',
+              }}
+            >
+              <Save size={12} />
+              <span>{isSavingProject ? 'Saving...' : 'Save'}</span>
+            </button>
+          )}
+        </div>
+
+        {/* Active Project File Name Badge */}
+        {projectName && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              background: 'rgba(255, 85, 31, 0.08)',
+              border: '1px solid rgba(255, 85, 31, 0.25)',
+              padding: '2px 8px',
+              borderRadius: 5,
+              fontSize: 10,
+              fontWeight: 700,
+              color: '#FF551F',
+              fontFamily: 'monospace',
+              maxWidth: 180,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+            title={`Active Project File: ${projectName}`}
+          >
+            <span>{projectName}</span>
+          </div>
+        )}
       </div>
 
       {/* Center: Active Sprite Info Pill */}
