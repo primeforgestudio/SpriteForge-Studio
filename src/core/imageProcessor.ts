@@ -542,25 +542,25 @@ export class ImageProcessor {
         }
       }
 
-      // KeyForge Matte Levels: Clip Black & Clip White
+      // KeyForge Matte Levels: Softness curve transition matching WebGLKeyer GPU shader
       let alpha = 0;
-      if (alphaRaw <= cb) {
-        alpha = 0;
-      } else if (alphaRaw >= cw) {
-        alpha = 1;
+      const soften = (settings.soften ?? 0) / 100.0;
+      if (soften > 0.001) {
+        const sHalf = soften * 0.35;
+        const bStart = Math.max(0.0, cb - sHalf);
+        const wEnd = Math.min(1.0, cw + sHalf);
+        const span = Math.max(0.001, wEnd - bStart);
+        const t = Math.max(0.0, Math.min(1.0, (alphaRaw - bStart) / span));
+        alpha = t * t * (3.0 - 2.0 * t);
       } else {
-        alpha = (alphaRaw - cb) / (cw - cb);
+        const span = Math.max(0.001, cw - cb);
+        alpha = Math.max(0.0, Math.min(1.0, (alphaRaw - cb) / span));
       }
 
       alphaBuffer[i] = Math.max(0, Math.min(1, alpha));
     }
 
-    // Post-processing: Soften (blur)
     let blurredAlpha: Float32Array<ArrayBufferLike> = alphaBuffer;
-    if (settings.soften > 0) {
-      const radius = Math.max(1, Math.round((settings.soften / 100.0) * 12));
-      blurredAlpha = this.fastBoxBlur(alphaBuffer, width, height, radius);
-    }
 
     // Clip (Gamma)
     if (settings.clip !== 0) {
@@ -896,33 +896,16 @@ export class ImageProcessor {
       return canvas;
     }
 
-    let sx = 0;
-    let sy = 0;
-    let sw = srcW;
-    let sh = srcH;
-
-    if (cropTarget) {
-      const srcAspect = srcW / srcH;
-      const targetAspect = cropTarget.width / cropTarget.height;
-
-      if (Math.abs(srcAspect - targetAspect) > 0.001) {
-        if (srcAspect > targetAspect) {
-          // Too wide -> crop width
-          sh = srcH;
-          sw = Math.floor(srcH * targetAspect);
-        } else {
-          // Too tall -> crop height
-          sw = srcW;
-          sh = Math.floor(srcW / targetAspect);
-        }
-        sx = Math.floor((srcW - sw) / 2);
-        sy = Math.floor((srcH - sh) / 2);
-      }
-    }
+    // Uniform aspect-fit (contain) within target dimensions, centered
+    const scale = Math.min(targetWidth / srcW, targetHeight / srcH);
+    const dw = Math.round(srcW * scale);
+    const dh = Math.round(srcH * scale);
+    const dx = Math.round((targetWidth - dw) / 2);
+    const dy = Math.round((targetHeight - dh) / 2);
 
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(srcDrawable, sx, sy, sw, sh, 0, 0, targetWidth, targetHeight);
+    ctx.drawImage(srcDrawable, 0, 0, srcW, srcH, dx, dy, dw, dh);
 
     return canvas;
   }

@@ -14,12 +14,11 @@ export class SpriteProcessor {
   ): HTMLCanvasElement {
     const { targetWidth, targetHeight } = settings;
 
-    // 1. First crop & resize base image to target dimensions
+    // 1. First resize base image to target dimensions (aspect-fit contain)
     const baseResized = ImageProcessor.resizeCanvas(
       sourceCanvas,
       targetWidth,
-      targetHeight,
-      { width: targetWidth, height: targetHeight }
+      targetHeight
     );
 
     // 2. Apply pan & scale transform

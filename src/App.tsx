@@ -983,7 +983,55 @@ export const App: React.FC = () => {
     };
   }, [mode, currentFrame, markers, keyingSettings, atlasSettings.enableOnionSkin, atlasSettings.onionOpacity]);
 
-  // Update Atlas Preview (Fast & Downsampled for UI thumbnail)
+  // High-fidelity Keyer producing clean, full-resolution transparent canvas matching Viewport
+  const getKeyedFrameCanvas = useCallback(
+    (raw: ImageData): HTMLCanvasElement => {
+      try {
+        if (!webglCanvasRef.current) {
+          webglCanvasRef.current = document.createElement('canvas');
+          webglKeyerRef.current = new WebGLKeyer(webglCanvasRef.current);
+        }
+        if (webglKeyerRef.current) {
+          const ok = webglKeyerRef.current.render(
+            raw,
+            raw.width,
+            raw.height,
+            keyingSettings,
+            false,
+            'checkerboard',
+            [0, 0, 0]
+          );
+          if (ok) {
+            const outCanvas = document.createElement('canvas');
+            outCanvas.width = raw.width;
+            outCanvas.height = raw.height;
+            const ctx = outCanvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(webglKeyerRef.current.getCanvas(), 0, 0);
+              return outCanvas;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('WebGL keying fallback to CPU:', e);
+      }
+
+      // CPU fallback
+      const outCanvas = document.createElement('canvas');
+      outCanvas.width = raw.width;
+      outCanvas.height = raw.height;
+      const ctx = outCanvas.getContext('2d');
+      if (ctx) {
+        const copy = new ImageData(new Uint8ClampedArray(raw.data), raw.width, raw.height);
+        ImageProcessor.applyChromaKey(copy, keyingSettings);
+        ctx.putImageData(copy, 0, 0);
+      }
+      return outCanvas;
+    },
+    [keyingSettings]
+  );
+
+  // Update Atlas Preview (Fast & High Quality matching Viewport)
   const isUpdatingAtlasRef = useRef(false);
   const updateAtlasPreview = useCallback(async () => {
     if (mode !== 'atlas' || isUpdatingAtlasRef.current || atlasLoaderRef.current.isVideoPlaying()) return;
@@ -1011,29 +1059,25 @@ export const App: React.FC = () => {
         if (loader.isVideoPlaying()) return;
         const raw = await loader.getFrame(frameIdx);
         if (raw) {
-          // 1. Downscale raw frame first with bounding cropBox if active
+          // 1. Key at full resolution using the exact same WebGL GPU keyer as Viewport
+          const keyedCanvas = getKeyedFrameCanvas(raw);
+
+          // 2. Uniform aspect-fit resize with bounding cropBox if active
           const smallCanvas = ImageProcessor.resizeCanvas(
-            raw,
+            keyedCanvas,
             pfw,
             pfh,
-            { width: fw, height: fh },
+            null,
             atlasSettings.cropBox
           );
-          const smallCtx = smallCanvas.getContext('2d');
-          if (smallCtx) {
-            const smallData = smallCtx.getImageData(0, 0, pfw, pfh);
-            // 2. Apply Chroma Key on tiny 128px buffer (takes < 0.2ms!)
-            ImageProcessor.applyChromaKey(smallData, keyingSettings);
-            smallCtx.putImageData(smallData, 0, 0);
 
-            // 3. Apply Contact Drop-Shadow if enabled
-            if (atlasSettings.enableShadow) {
-              ImageProcessor.applyDropShadow(
-                smallCanvas,
-                (atlasSettings.shadowOpacity ?? 45) / 100,
-                atlasSettings.shadowScale ?? 60
-              );
-            }
+          // 3. Apply Contact Drop-Shadow if enabled
+          if (atlasSettings.enableShadow) {
+            ImageProcessor.applyDropShadow(
+              smallCanvas,
+              (atlasSettings.shadowOpacity ?? 45) / 100,
+              atlasSettings.shadowScale ?? 60
+            );
           }
           frameCanvases.push(smallCanvas);
         } else {
@@ -1122,7 +1166,7 @@ export const App: React.FC = () => {
     } finally {
       isUpdatingAtlasRef.current = false;
     }
-  }, [mode, markers, atlasSettings, keyingSettings]);
+  }, [mode, markers, atlasSettings, keyingSettings, getKeyedFrameCanvas]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -1409,17 +1453,12 @@ export const App: React.FC = () => {
             for (const frameIdx of trackMarkers) {
               const raw = await tempLoader.getFrame(frameIdx);
               if (raw) {
-                const processed = new ImageData(
-                  new Uint8ClampedArray(raw.data),
-                  raw.width,
-                  raw.height
-                );
-                ImageProcessor.applyChromaKey(processed, keyingSettings);
+                const keyed = getKeyedFrameCanvas(raw);
                 const resized = ImageProcessor.resizeCanvas(
-                  processed,
+                  keyed,
                   fw,
                   fh,
-                  { width: fw, height: fh },
+                  null,
                   atlasSettings.cropBox
                 );
                 if (atlasSettings.enableShadow) {
@@ -1671,17 +1710,12 @@ export const App: React.FC = () => {
         for (const frameIdx of markers) {
           const raw = await loader.getFrame(frameIdx);
           if (raw) {
-            const processed = new ImageData(
-              new Uint8ClampedArray(raw.data),
-              raw.width,
-              raw.height
-            );
-            ImageProcessor.applyChromaKey(processed, keyingSettings);
+            const keyed = getKeyedFrameCanvas(raw);
             const resized = ImageProcessor.resizeCanvas(
-              processed,
+              keyed,
               fw,
               fh,
-              { width: fw, height: fh },
+              null,
               atlasSettings.cropBox
             );
             if (atlasSettings.enableShadow) {
@@ -1988,17 +2022,12 @@ export const App: React.FC = () => {
           for (const frameIdx of trackMarkers) {
             const raw = await tempLoader.getFrame(frameIdx);
             if (raw) {
-              const processed = new ImageData(
-                new Uint8ClampedArray(raw.data),
-                raw.width,
-                raw.height
-              );
-              ImageProcessor.applyChromaKey(processed, keyingSettings);
+              const keyed = getKeyedFrameCanvas(raw);
               const resized = ImageProcessor.resizeCanvas(
-                processed,
+                keyed,
                 fw,
                 fh,
-                { width: fw, height: fh },
+                null,
                 atlasSettings.cropBox
               );
               if (atlasSettings.enableShadow) {
@@ -2052,17 +2081,12 @@ export const App: React.FC = () => {
       for (const frameIdx of markers) {
         const raw = await loader.getFrame(frameIdx);
         if (raw) {
-          const processed = new ImageData(
-            new Uint8ClampedArray(raw.data),
-            raw.width,
-            raw.height
-          );
-          ImageProcessor.applyChromaKey(processed, keyingSettings);
+          const keyed = getKeyedFrameCanvas(raw);
           const resized = ImageProcessor.resizeCanvas(
-            processed,
+            keyed,
             fw,
             fh,
-            { width: fw, height: fh },
+            null,
             atlasSettings.cropBox
           );
           if (atlasSettings.enableShadow) {
