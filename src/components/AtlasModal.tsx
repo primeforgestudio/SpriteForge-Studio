@@ -849,20 +849,32 @@ export const AtlasModal: React.FC<AtlasModalProps> = ({
           <button
             onClick={onClose}
             style={{
-              background: '#2B2D37',
-              border: '1px solid #3d4050',
+              background: 'rgba(255, 255, 255, 0.1)',
+              border: '1px solid rgba(255, 255, 255, 0.28)',
               borderRadius: 6,
-              color: 'var(--text-bright)',
-              width: 28,
-              height: 28,
+              color: '#ffffff',
+              width: 32,
+              height: 32,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               cursor: 'pointer',
+              transition: 'all 0.15s ease',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
             }}
-            title="Close (Esc)"
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = '#e63946';
+              e.currentTarget.style.borderColor = '#ff4d4d';
+              e.currentTarget.style.boxShadow = '0 0 12px rgba(230, 57, 70, 0.6)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.28)';
+              e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.4)';
+            }}
+            title="Close Atlas View (Esc)"
           >
-            <X size={15} />
+            <X size={18} strokeWidth={2.6} />
           </button>
         </div>
       </div>

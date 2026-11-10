@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { BackgroundMode, GarbageMatteSettings, CollisionSettings, MeshSettings, SpriteMesh } from '../core/types';
-import { Plus, Minus, RotateCcw, Maximize2, Pipette, Crosshair, Layers, Scissors, Shield, Columns, Sun, Lightbulb, Eye, ChevronDown, Check, Box } from 'lucide-react';
+import { Plus, Minus, RotateCcw, Maximize2, Pipette, Crosshair, Layers, Scissors, Shield, Columns, Sun, Lightbulb, Eye, ChevronDown, Check, Box, UploadCloud } from 'lucide-react';
 import { NormalMapGenerator } from '../core/normalMapGenerator';
 import { PbrGenerator } from '../core/pbrGenerator';
 import { MeshGenerator } from '../core/meshGenerator';
@@ -92,6 +92,7 @@ const ViewportComponent: React.FC<ViewportProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const displayCanvasRef = useRef<HTMLCanvasElement>(null);
   const canvasWrapperRef = useRef<HTMLDivElement>(null);
+  const emptyFileInputRef = useRef<HTMLInputElement>(null);
 
   const [zoom, setZoom] = useState<number>(1.0);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -1261,27 +1262,68 @@ const ViewportComponent: React.FC<ViewportProps> = ({
 
       {/* Canvas or Empty State */}
       {!hasMedia ? (
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 10,
-            color: 'var(--text-muted)',
-            border: '2px dashed var(--border-medium)',
-            borderRadius: 12,
-            padding: '50px 80px',
-            textAlign: 'center',
-          }}
-        >
-          <div style={{ fontSize: 14, color: 'var(--text-bright)', fontWeight: 600 }}>
-            {emptyMessage}
+        <>
+          <input
+            type="file"
+            ref={emptyFileInputRef}
+            onChange={(e) => {
+              if (e.target.files && e.target.files.length > 0) {
+                onFilesDropped(e.target.files);
+              }
+            }}
+            multiple
+            accept="video/*,image/*"
+            style={{ display: 'none' }}
+          />
+          <div
+            onClick={() => emptyFileInputRef.current?.click()}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 12,
+              color: 'var(--text-muted)',
+              border: '2px dashed var(--border-medium)',
+              borderRadius: 12,
+              padding: '48px 70px',
+              textAlign: 'center',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              background: 'rgba(255, 255, 255, 0.01)',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = '#FF551F';
+              e.currentTarget.style.background = 'rgba(255, 85, 31, 0.04)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = 'var(--border-medium)';
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.01)';
+            }}
+          >
+            <div
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 10,
+                background: 'rgba(255, 85, 31, 0.1)',
+                border: '1px solid rgba(255, 85, 31, 0.3)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#FF551F',
+              }}
+            >
+              <UploadCloud size={22} />
+            </div>
+            <div style={{ fontSize: 14, color: 'var(--text-bright)', fontWeight: 600 }}>
+              {emptyMessage}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>
+              Drag and drop media files or click anywhere here to browse
+            </div>
           </div>
-          <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>
-            Drag and drop media files or click "Load media"
-          </div>
-        </div>
+        </>
       ) : (
         <div
           ref={canvasWrapperRef}

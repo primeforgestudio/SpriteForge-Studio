@@ -35,7 +35,7 @@ export class ImageProcessor {
   }
 
   /**
-   * Main Chroma Key entry point - Keylight Color Difference Keying
+   * Main Chroma Key entry point - KeyForge Color Difference Keying
    */
   public static applyChromaKey(
     imageData: ImageData,
@@ -47,7 +47,7 @@ export class ImageProcessor {
     }
     let result = imageData;
     if (settings.enabled) {
-      result = this.applyKeylight(imageData, settings);
+      result = this.applyKeyForge(imageData, settings);
       if (settings.defringe && !skipDefringe) {
         this.applySmartDefringe(
           result,
@@ -69,7 +69,7 @@ export class ImageProcessor {
   }
 
   /**
-   * CorridorKey-inspired Smart Edge Defringe & Inward Color Reconstruction.
+   * Smart Edge Defringe & Inward Color Reconstruction.
    * Eliminates green/dark fringe halos along hair, swords, fur, and thin silhouettes
    * by reconstructing edge pixel colors from nearest solid interior pixels (alpha >= 230).
    * Crucially, leaves anti-aliased subpixel alpha intact so fine details are preserved.
@@ -361,9 +361,9 @@ export class ImageProcessor {
   }
 
   /**
-   * Keylight 1.2-grade Color Difference Keying with Despill and Clip Black/White
+   * KeyForge-grade Color Difference Keying with Despill and Clip Black/White
    */
-  public static applyKeylight(
+  public static applyKeyForge(
     imageData: ImageData,
     settings: ChromaKeySettings
   ): ImageData {
@@ -497,7 +497,7 @@ export class ImageProcessor {
         }
       }
 
-      // 1. Color Difference RGB Keylight Alpha
+      // 1. Color Difference RGB KeyForge Alpha
       let rgbAlpha = 1.0;
       if (pExcess > 0) {
         const keyRatio = (pExcess / sExcess) * gain;
@@ -542,7 +542,7 @@ export class ImageProcessor {
         }
       }
 
-      // Keylight Matte Levels: Clip Black & Clip White
+      // KeyForge Matte Levels: Clip Black & Clip White
       let alpha = 0;
       if (alphaRaw <= cb) {
         alpha = 0;

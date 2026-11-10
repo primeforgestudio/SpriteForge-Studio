@@ -23,7 +23,7 @@ pub struct ChromaKeyConfig {
     pub border_clean_threshold: u8,
 }
 
-/// Keylight Color Difference Keying implementation in Rust.
+/// KeyForge Color Difference Keying implementation in Rust.
 pub fn apply_chroma_key(
     rgba: &mut [u8],
     width: u32,

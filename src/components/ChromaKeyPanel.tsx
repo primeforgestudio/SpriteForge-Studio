@@ -638,7 +638,7 @@ const ChromaKeyPanelComponent: React.FC<ChromaKeyPanelProps> = ({
         )}
       </div>
 
-      {/* KEYLIGHT CONTROLS */}
+      {/* KEYFORGE CONTROLS */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {/* Screen Gain */}
         <div>
@@ -844,7 +844,7 @@ const ChromaKeyPanelComponent: React.FC<ChromaKeyPanelProps> = ({
         </div>
       </div>
 
-      {/* SMART DEFRINGE / COLOR RECONSTRUCTION (CorridorKey method) */}
+      {/* SMART DEFRINGE / COLOR RECONSTRUCTION */}
       <div style={{ marginTop: 8 }}>
         <div
           className="sidebar-section-title"
@@ -852,7 +852,7 @@ const ChromaKeyPanelComponent: React.FC<ChromaKeyPanelProps> = ({
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <Sparkles size={12} color="var(--accent-orange)" />
-            <span>Smart Defringe (CorridorKey)</span>
+            <span>Smart Defringe</span>
           </div>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 11, textTransform: 'none' }}>
             <input

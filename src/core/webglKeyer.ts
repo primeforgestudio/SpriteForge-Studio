@@ -1,6 +1,6 @@
 /**
  * SpriteForge Studio - High-Performance WebGL Chroma Key & Viewport Renderer
- * Executes Keylight Chroma Keying, Softness, Erode, Blur, Smart Defringe,
+ * Executes KeyForge Chroma Keying, Softness, Erode, Blur, Smart Defringe,
  * Garbage Matte (Cutout & Feather), and Background compositing directly on GPU.
  */
 
@@ -54,7 +54,7 @@ uniform bool u_garbageInvert;
 uniform int u_bgMode; // 0 = checkerboard (transparent output), 1 = solid color
 uniform vec3 u_bgColor; // RGB [0..1]
 
-// Evaluates Keylight + YCbCr alpha for a specific key color
+// Evaluates KeyForge + YCbCr alpha for a specific key color
 float computeKeyAlphaForColor(vec4 color, vec3 keyCol, float gainVal) {
     float r = color.r;
     float g = color.g;
@@ -64,7 +64,7 @@ float computeKeyAlphaForColor(vec4 color, vec3 keyCol, float gainVal) {
     float sg = keyCol.g;
     float sb = keyCol.b;
 
-    // 1. Screen excess calculation (Keylight RGB model)
+    // 1. Screen excess calculation (KeyForge RGB model)
     float sComp = u_balance * sr + (1.0 - u_balance) * sb;
     float sExcess = max(0.001, sg - sComp);
 
@@ -136,7 +136,7 @@ void main() {
         return;
     }
 
-    // 1. Base Keylight Alpha
+    // 1. Base KeyForge Alpha
     float alpha = computeKeyAlpha(src);
 
     // 2. Erode (Matte Shrink) with Ink Outline Protector
@@ -191,7 +191,7 @@ void main() {
         }
     }
 
-    // 5. Smart Defringe (CorridorKey edge color reconstruction)
+    // 5. Smart Defringe (Edge color reconstruction)
     if (u_enabled && u_defringe && alpha > 0.01 && alpha < 0.98) {
         vec2 dStep = vec2(u_defringeRadius) / u_resolution;
         vec3 solidColor = src.rgb;
@@ -419,7 +419,7 @@ export class WebGLKeyer {
     gl.uniform1i(this.uniformLocs['u_image'], 0);
     gl.uniform2f(this.uniformLocs['u_resolution'], width, height);
 
-    // Set Keylight uniforms
+    // Set KeyForge uniforms
     gl.uniform1i(this.uniformLocs['u_enabled'], keying.enabled ? 1 : 0);
     gl.uniform3f(
       this.uniformLocs['u_keyColor'],
@@ -456,7 +456,7 @@ export class WebGLKeyer {
       gl.uniform1i(this.uniformLocs['u_hasSecondaryKey'], 0);
     }
 
-    // Smart Defringe (CorridorKey)
+    // Smart Defringe
     gl.uniform1i(this.uniformLocs['u_defringe'], keying.defringe ? 1 : 0);
     gl.uniform1f(this.uniformLocs['u_defringeRadius'], keying.defringeRadius ?? 2);
     gl.uniform1f(this.uniformLocs['u_defringeStrength'], (keying.defringeStrength ?? 85) / 100.0);

@@ -37,6 +37,7 @@ interface LeftSidebarProps {
   onUpdateTrack: (track: AnimationTrack) => void;
   onToggleTrackEnabled: (id: string) => void;
   onMoveTrack: (id: string, dir: 'up' | 'down') => void;
+  onDeleteTrack?: (id: string) => void;
   onAddFiles: (files: FileList) => void;
   exportScope: ExportScope;
   setExportScope: (scope: ExportScope) => void;
@@ -71,6 +72,7 @@ const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
   onUpdateTrack,
   onToggleTrackEnabled,
   onMoveTrack,
+  onDeleteTrack,
   onAddFiles,
   exportScope,
   setExportScope,
@@ -183,10 +185,10 @@ const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
             flexDirection: 'column',
             gap: 2,
           }}
-          title="Keylight Chroma Key"
+          title="KeyForge Chroma Key"
         >
           <Wand2 size={12} style={{ color: activeTab === 'keylight' ? '#FF551F' : 'inherit' }} />
-          <span>Keylight</span>
+          <span>KeyForge</span>
         </button>
 
         <button

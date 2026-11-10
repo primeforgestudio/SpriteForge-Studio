@@ -1351,6 +1351,25 @@ export const App: React.FC = () => {
     });
   };
 
+  const handleDeleteTrack = (id: string) => {
+    setTracks((prev) => {
+      const remaining = prev.filter((t) => t.id !== id);
+      if (selectedTrackId === id) {
+        if (remaining.length > 0) {
+          handleSelectTrack(remaining[0].id);
+        } else {
+          setSelectedTrackId('');
+          setViewportCanvas(null);
+          setRawFrameCanvas(null);
+          atlasLoaderRef.current.metadata.totalFrames = 0;
+          atlasLoaderRef.current.metadata.filename = '';
+          setCurrentFrame(0);
+        }
+      }
+      return remaining;
+    });
+  };
+
   // Export Action
   const handleExport = async () => {
     setIsExporting(true);
@@ -2136,6 +2155,7 @@ export const App: React.FC = () => {
           onUpdateTrack={handleUpdateTrack}
           onToggleTrackEnabled={handleToggleTrackEnabled}
           onMoveTrack={handleMoveTrack}
+          onDeleteTrack={handleDeleteTrack}
           onAddFiles={handleLoadFiles}
           exportScope={exportScope}
           setExportScope={setExportScope}

@@ -13,7 +13,7 @@ export interface ChromaKeySettings {
   valThresh: number; // 0..100
   erodePx: number; // 0..5 (float)
   blurPx: number; // 0..10 (float)
-  // Keylight 1.2 specific:
+  // KeyForge specific:
   screenBalance: number; // 0..100 (default 50)
   clipBlack: number; // 0..100 (default 0)
   clipWhite: number; // 0..100 (default 100)
@@ -29,7 +29,7 @@ export interface ChromaKeySettings {
   };
   // Garbage Matte (AI Watermarks & Edge Artifacts Cutout)
   garbageMatte?: GarbageMatteSettings;
-  // Smart Edge Defringe & Color Reconstruction (CorridorKey method)
+  // Smart Edge Defringe & Color Reconstruction
   defringe?: boolean; // default true
   defringeRadius?: number; // 1..6 px (default 2)
   defringeStrength?: number; // 0..100% (default 85)
