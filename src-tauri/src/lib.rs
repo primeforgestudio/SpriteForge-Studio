@@ -96,17 +96,113 @@ fn generate_godot_tres_cmd(
     )
 }
 
+#[derive(serde::Deserialize)]
+pub struct ExportFileEntry {
+    pub name: String,
+    pub content_base64: Option<String>,
+    pub text: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+pub struct NativeExportResult {
+    pub success: bool,
+    pub target_dir: Option<String>,
+    pub error: Option<String>,
+    pub count: usize,
+}
+
+#[tauri::command]
+fn pick_export_directory_cmd(default_path: Option<String>) -> Option<String> {
+    let mut dialog = rfd::FileDialog::new().set_title("Select Destination Directory for Sprite Export");
+    if let Some(p) = default_path {
+        if !p.is_empty() {
+            dialog = dialog.set_directory(p);
+        }
+    }
+    dialog.pick_folder().map(|p| p.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn save_export_files_native_cmd(
+    target_dir: String,
+    folder_name: String,
+    files: Vec<ExportFileEntry>,
+) -> NativeExportResult {
+    let clean_folder = folder_name.trim().replace(|c: char| ['<', '>', ':', '"', '/', '\\', '|', '?', '*'].contains(&c), "_");
+    let full_path = std::path::Path::new(&target_dir).join(&clean_folder);
+    if let Err(e) = std::fs::create_dir_all(&full_path) {
+        return NativeExportResult {
+            success: false,
+            target_dir: None,
+            error: Some(format!("Failed to create folder {}: {}", full_path.display(), e)),
+            count: 0,
+        };
+    }
+
+    let mut count = 0;
+    for file in files {
+        let file_path = full_path.join(&file.name);
+        if let Some(text) = file.text {
+            if let Err(e) = std::fs::write(&file_path, text.as_bytes()) {
+                return NativeExportResult {
+                    success: false,
+                    target_dir: None,
+                    error: Some(format!("Failed to write {}: {}", file_path.display(), e)),
+                    count,
+                };
+            }
+            count += 1;
+        } else if let Some(b64) = file.content_base64 {
+            use base64::Engine;
+            let clean_b64 = if let Some(pos) = b64.find(";base64,") {
+                &b64[pos + 8..]
+            } else {
+                b64.trim()
+            };
+            let bytes = match base64::engine::general_purpose::STANDARD.decode(clean_b64) {
+                Ok(b) => b,
+                Err(e) => return NativeExportResult {
+                    success: false,
+                    target_dir: None,
+                    error: Some(format!("Base64 decode error on {}: {}", file.name, e)),
+                    count,
+                },
+            };
+            if let Err(e) = std::fs::write(&file_path, &bytes) {
+                return NativeExportResult {
+                    success: false,
+                    target_dir: None,
+                    error: Some(format!("Failed to write {}: {}", file_path.display(), e)),
+                    count,
+                };
+            }
+            count += 1;
+        }
+    }
+
+    NativeExportResult {
+        success: true,
+        target_dir: Some(full_path.to_string_lossy().to_string()),
+        error: None,
+        count,
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_log::Builder::default().build())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .invoke_handler(tauri::generate_handler![
             ping_engine,
             generate_normal_map_cmd,
             generate_pbr_maps_cmd,
             apply_chroma_key_cmd,
             generate_mesh_cmd,
-            generate_godot_tres_cmd
+            generate_godot_tres_cmd,
+            pick_export_directory_cmd,
+            save_export_files_native_cmd
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -433,7 +433,7 @@ const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
                           </div>
                         </div>
 
-                        {/* Bottom row: Frames count, FPS, Loop Toggle */}
+                        {/* Bottom row: Direction badge, Frames count, FPS, Loop Toggle */}
                         <div
                           style={{
                             display: 'flex',
@@ -444,9 +444,25 @@ const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
                             color: 'var(--text-muted)',
                           }}
                         >
-                          <span>
-                            {track.markers.length || track.totalFrames} frames • {track.fps || 12} FPS
-                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            {track.directionLabel && (
+                              <span
+                                style={{
+                                  background: 'rgba(255, 85, 31, 0.15)',
+                                  color: '#FF551F',
+                                  padding: '1px 5px',
+                                  borderRadius: 3,
+                                  fontWeight: 700,
+                                  fontSize: 9,
+                                }}
+                              >
+                                {track.directionLabel}
+                              </span>
+                            )}
+                            <span>
+                              {track.markers.length || track.totalFrames} frames • {track.fps || 12} FPS
+                            </span>
+                          </div>
 
                           <button
                             onClick={(e) => {

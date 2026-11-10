@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { AtlasSettings, CollisionSettings } from '../core/types';
 import { StatePreset } from '../core/boundingCrop';
-import { Scissors, RotateCcw, Shield, Wand2, Copy, FileArchive } from 'lucide-react';
+import { Scissors, RotateCcw, Shield, Wand2, Copy, FileArchive, Compass } from 'lucide-react';
 
 interface AtlasPanelProps {
   settings: AtlasSettings;
@@ -13,6 +13,8 @@ interface AtlasPanelProps {
   isAutoCropping: boolean;
   onResetCrop: () => void;
   onAutoFitFeet?: () => void;
+  onSliceEightDirections?: () => Promise<void>;
+  isSlicing8Dir?: boolean;
 }
 
 const AtlasPanelComponent: React.FC<AtlasPanelProps> = ({
@@ -25,11 +27,52 @@ const AtlasPanelComponent: React.FC<AtlasPanelProps> = ({
   isAutoCropping,
   onResetCrop,
   onAutoFitFeet,
+  onSliceEightDirections,
+  isSlicing8Dir = false,
 }) => {
   const [showPackTooltip, setShowPackTooltip] = useState(false);
 
   const update = <K extends keyof AtlasSettings>(key: K, value: AtlasSettings[K]) => {
     onChange({ ...settings, [key]: value });
+  };
+
+  const handleWidthChange = (val: number) => {
+    const fw = Math.max(16, val);
+    if (settings.cropBox) {
+      onChange({
+        ...settings,
+        frameWidth: fw,
+        cropBox: { ...settings.cropBox, width: fw },
+      });
+    } else {
+      update('frameWidth', fw);
+    }
+  };
+
+  const handleHeightChange = (val: number) => {
+    const fh = Math.max(16, val);
+    if (settings.cropBox) {
+      onChange({
+        ...settings,
+        frameHeight: fh,
+        cropBox: { ...settings.cropBox, height: fh },
+      });
+    } else {
+      update('frameHeight', fh);
+    }
+  };
+
+  const handleSizePreset = (s: number) => {
+    if (settings.cropBox) {
+      onChange({
+        ...settings,
+        frameWidth: s,
+        frameHeight: s,
+        cropBox: { ...settings.cropBox, width: s, height: s },
+      });
+    } else {
+      onChange({ ...settings, frameWidth: s, frameHeight: s });
+    }
   };
 
   const handleColsChange = (cols: number) => {
@@ -199,7 +242,7 @@ const AtlasPanelComponent: React.FC<AtlasPanelProps> = ({
             <input
               type="number"
               value={settings.frameWidth}
-              onChange={(e) => update('frameWidth', Math.max(16, Number(e.target.value)))}
+              onChange={(e) => handleWidthChange(Number(e.target.value))}
               style={{
                 width: '100%',
                 background: 'transparent',
@@ -230,7 +273,7 @@ const AtlasPanelComponent: React.FC<AtlasPanelProps> = ({
             <input
               type="number"
               value={settings.frameHeight}
-              onChange={(e) => update('frameHeight', Math.max(16, Number(e.target.value)))}
+              onChange={(e) => handleHeightChange(Number(e.target.value))}
               style={{
                 width: '100%',
                 background: 'transparent',
@@ -252,7 +295,7 @@ const AtlasPanelComponent: React.FC<AtlasPanelProps> = ({
           return (
             <button
               key={size}
-              onClick={() => onChange({ ...settings, frameWidth: size, frameHeight: size })}
+              onClick={() => handleSizePreset(size)}
               style={{
                 flex: 1,
                 height: 28,
@@ -381,6 +424,34 @@ const AtlasPanelComponent: React.FC<AtlasPanelProps> = ({
             '✂ Tight Auto-Crop Bounds'
           )}
         </button>
+
+        {/* 8-Direction Auto-Slice Button */}
+        {onSliceEightDirections && (
+          <button
+            onClick={onSliceEightDirections}
+            disabled={isSlicing8Dir}
+            style={{
+              height: 32,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              background: 'linear-gradient(135deg, rgba(255, 85, 31, 0.18) 0%, rgba(255, 140, 0, 0.12) 100%)',
+              border: '1px solid #FF551F',
+              borderRadius: 5,
+              color: '#FF551F',
+              fontSize: 11,
+              fontWeight: 700,
+              cursor: isSlicing8Dir ? 'wait' : 'pointer',
+              opacity: isSlicing8Dir ? 0.7 : 1,
+              transition: 'all 0.15s ease',
+            }}
+            title="Auto-detect 8 angles in 3x3 circle layout and split into 8 direction tracks (Front, Left, Back, Right, Diagonals)"
+          >
+            <Compass size={13} color="#FF551F" />
+            {isSlicing8Dir ? 'Detecting & Slicing 8 Angles...' : '🧭 Slice 8-Directions (3×3 Grid)'}
+          </button>
+        )}
       </div>
 
       {/* Contact Drop-Shadow */}

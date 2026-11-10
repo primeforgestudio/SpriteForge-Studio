@@ -6,6 +6,7 @@ import { AtlasBuilder } from './core/atlasBuilder';
 import { SpriteProcessor } from './core/spriteProcessor';
 import { LoopDetector } from './core/loopDetector';
 import { BoundingCrop, StatePreset } from './core/boundingCrop';
+import { DirectionSlicer } from './core/directionSlicer';
 import { GodotExporter } from './core/godotExporter';
 import { MeshGenerator } from './core/meshGenerator';
 import { DuplicateEliminator } from './core/duplicateEliminator';
@@ -422,6 +423,47 @@ export const App: React.FC = () => {
       ...prev,
       cropBox: null,
     }));
+  };
+
+  // 8-Direction Auto-Slice for 3x3 Compass Character Sheets
+  const [isSlicing8Dir, setIsSlicing8Dir] = useState(false);
+  const handleSliceEightDirections = async () => {
+    const loader = atlasLoaderRef.current;
+    if (loader.metadata.totalFrames <= 0 || markers.length === 0) return;
+
+    setIsSlicing8Dir(true);
+    try {
+      const activeTrack = tracks.find((t) => t.id === selectedTrackId);
+      const fileRef = activeTrack?.fileRef;
+      const res = await DirectionSlicer.sliceEightDirections(
+        loader,
+        markers,
+        keyingSettings,
+        loader.metadata.filename || exportFilename,
+        fileRef,
+        atlasSettings.fps
+      );
+
+      if (res && res.tracks.length > 0) {
+        setTracks(res.tracks);
+        const first = res.tracks[0];
+        setSelectedTrackId(first.id);
+        setSelectedFileId(first.id);
+        setAtlasSettings((prev) => ({
+          ...prev,
+          frameWidth: res.uniformCellW,
+          frameHeight: res.uniformCellH,
+          cropBox: first.cropBox ?? null,
+        }));
+        setExportFilename(first.name);
+        setExportToast(`Sliced 8 Directional Tracks (${res.uniformCellW}×${res.uniformCellH})`);
+        setTimeout(() => setExportToast(null), 4500);
+      }
+    } catch (e: any) {
+      alert(`8-Direction Slicing failed: ${e.message}`);
+    } finally {
+      setIsSlicing8Dir(false);
+    }
   };
 
   // Auto-fit feet physics collision capsule based on ground contact pixels
@@ -1314,12 +1356,12 @@ export const App: React.FC = () => {
 
   // Switch between tracks
   const handleSelectTrack = async (id: string) => {
-    // 1. Save current timeline state to active track before switching
+    // 1. Save current timeline state and crop box to active track before switching
     if (selectedTrackId) {
       setTracks((prev) =>
         prev.map((t) =>
           t.id === selectedTrackId
-            ? { ...t, cropStart, cropEnd, markers, fps: atlasSettings.fps }
+            ? { ...t, cropStart, cropEnd, markers, fps: atlasSettings.fps, cropBox: atlasSettings.cropBox }
             : t
         )
       );
@@ -1329,8 +1371,17 @@ export const App: React.FC = () => {
     if (!target || !target.fileRef) return;
     setSelectedTrackId(id);
     setSelectedFileId(id);
-    const baseName = target.fileName.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_') || 'character_atlas';
+    const baseName = target.name || target.fileName.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_') || 'character_atlas';
     setExportFilename(baseName);
+
+    if (target.cropBox !== undefined) {
+      setAtlasSettings((prev) => ({
+        ...prev,
+        cropBox: target.cropBox ?? null,
+        frameWidth: target.cropBox ? target.cropBox.width : prev.frameWidth,
+        frameHeight: target.cropBox ? target.cropBox.height : prev.frameHeight,
+      }));
+    }
 
     const isVideo = target.fileRef.type.startsWith('video/') || /\.(mp4|webm|mov|avi)$/i.test(target.fileName);
     if (isVideo) {
@@ -1459,7 +1510,7 @@ export const App: React.FC = () => {
                   fw,
                   fh,
                   null,
-                  atlasSettings.cropBox
+                  track.cropBox ?? atlasSettings.cropBox
                 );
                 if (atlasSettings.enableShadow) {
                   ImageProcessor.applyDropShadow(
@@ -2028,7 +2079,7 @@ export const App: React.FC = () => {
                 fw,
                 fh,
                 null,
-                atlasSettings.cropBox
+                track.cropBox ?? atlasSettings.cropBox
               );
               if (atlasSettings.enableShadow) {
                 ImageProcessor.applyDropShadow(
@@ -2272,6 +2323,8 @@ export const App: React.FC = () => {
               setAtlasSettings((prev) => ({ ...prev, meshSettings: mesh }))
             }
             renderTrigger={renderTrigger}
+            cropBox={atlasSettings.cropBox}
+            cropLabel={tracks.find((t) => t.id === selectedTrackId)?.directionLabel}
           />
 
           {/* Timeline */}
@@ -2328,6 +2381,8 @@ export const App: React.FC = () => {
                 isAutoCropping={isAutoCropping}
                 onResetCrop={handleResetCrop}
                 onAutoFitFeet={handleAutoFitFeet}
+                onSliceEightDirections={handleSliceEightDirections}
+                isSlicing8Dir={isSlicing8Dir}
               />
 
               {/* Atlas Preview & Convert & Export Button */}

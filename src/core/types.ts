@@ -231,4 +231,6 @@ export interface AnimationTrack {
   fps: number;
   loop: boolean;
   enabled: boolean;
+  cropBox?: { x: number; y: number; width: number; height: number } | null;
+  directionLabel?: string;
 }

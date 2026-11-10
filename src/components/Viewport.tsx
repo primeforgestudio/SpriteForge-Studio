@@ -48,6 +48,11 @@ interface ViewportProps {
   showMeshWireframe?: boolean;
   setShowMeshWireframe?: (show: boolean) => void;
   renderTrigger?: number;
+  // Crop Box & 8-Direction View
+  cropBox?: { x: number; y: number; width: number; height: number } | null;
+  cropLabel?: string;
+  isCropView?: boolean;
+  setIsCropView?: (val: boolean) => void;
 }
 
 const ViewportComponent: React.FC<ViewportProps> = ({
@@ -88,11 +93,22 @@ const ViewportComponent: React.FC<ViewportProps> = ({
   showMeshWireframe = false,
   setShowMeshWireframe,
   renderTrigger,
+  cropBox,
+  cropLabel,
+  isCropView,
+  setIsCropView,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const displayCanvasRef = useRef<HTMLCanvasElement>(null);
   const canvasWrapperRef = useRef<HTMLDivElement>(null);
   const emptyFileInputRef = useRef<HTMLInputElement>(null);
+
+  const [internalCropView, setInternalCropView] = useState(false);
+  const localCropView = isCropView !== undefined ? isCropView : internalCropView;
+  const setLocalCropView = (val: boolean) => {
+    setInternalCropView(val);
+    if (setIsCropView) setIsCropView(val);
+  };
 
   const [zoom, setZoom] = useState<number>(1.0);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -412,9 +428,13 @@ const ViewportComponent: React.FC<ViewportProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    if (canvas.width !== frameCanvas.width || canvas.height !== frameCanvas.height) {
-      canvas.width = frameCanvas.width;
-      canvas.height = frameCanvas.height;
+    const isCropped = Boolean(localCropView && cropBox && cropBox.width > 0 && cropBox.height > 0);
+    const targetW = isCropped ? cropBox!.width : frameCanvas.width;
+    const targetH = isCropped ? cropBox!.height : frameCanvas.height;
+
+    if (canvas.width !== targetW || canvas.height !== targetH) {
+      canvas.width = targetW;
+      canvas.height = targetH;
     }
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -508,7 +528,86 @@ const ViewportComponent: React.FC<ViewportProps> = ({
         }
       }
 
-      ctx.drawImage(drawnFrame, 0, 0);
+      if (isCropped) {
+        ctx.drawImage(
+          drawnFrame,
+          cropBox!.x,
+          cropBox!.y,
+          cropBox!.width,
+          cropBox!.height,
+          0,
+          0,
+          cropBox!.width,
+          cropBox!.height
+        );
+      } else {
+        ctx.drawImage(drawnFrame, 0, 0);
+
+        // Crop Box Overlay (when in full frame view)
+        if (cropBox && cropBox.width > 0 && cropBox.height > 0) {
+          ctx.save();
+          // Dim background outside crop box
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+          ctx.fillRect(0, 0, canvas.width, cropBox.y);
+          ctx.fillRect(0, cropBox.y + cropBox.height, canvas.width, canvas.height - (cropBox.y + cropBox.height));
+          ctx.fillRect(0, cropBox.y, cropBox.x, cropBox.height);
+          ctx.fillRect(cropBox.x + cropBox.width, cropBox.y, canvas.width - (cropBox.x + cropBox.width), cropBox.height);
+
+          // Orange glow border
+          ctx.strokeStyle = '#FF551F';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(cropBox.x, cropBox.y, cropBox.width, cropBox.height);
+
+          // Corner bracket accents
+          const bl = Math.min(22, Math.floor(cropBox.width * 0.15));
+          ctx.lineWidth = 3.5;
+          ctx.beginPath();
+          // Top-Left
+          ctx.moveTo(cropBox.x, cropBox.y + bl);
+          ctx.lineTo(cropBox.x, cropBox.y);
+          ctx.lineTo(cropBox.x + bl, cropBox.y);
+          // Top-Right
+          ctx.moveTo(cropBox.x + cropBox.width - bl, cropBox.y);
+          ctx.lineTo(cropBox.x + cropBox.width, cropBox.y);
+          ctx.lineTo(cropBox.x + cropBox.width, cropBox.y + bl);
+          // Bottom-Left
+          ctx.moveTo(cropBox.x, cropBox.y + cropBox.height - bl);
+          ctx.lineTo(cropBox.x, cropBox.y + cropBox.height);
+          ctx.lineTo(cropBox.x + bl, cropBox.y + cropBox.height);
+          // Bottom-Right
+          ctx.moveTo(cropBox.x + cropBox.width - bl, cropBox.y + cropBox.height);
+          ctx.lineTo(cropBox.x + cropBox.width, cropBox.y + cropBox.height);
+          ctx.lineTo(cropBox.x + cropBox.width, cropBox.y + cropBox.height - bl);
+          ctx.stroke();
+
+          // Direction & Dimension floating badge
+          const badgeText = cropLabel
+            ? `${cropLabel} • ${cropBox.width}×${cropBox.height}`
+            : `Crop: ${cropBox.width}×${cropBox.height}`;
+          ctx.font = 'bold 11px system-ui, sans-serif';
+          const textW = ctx.measureText(badgeText).width;
+          const badgeW = textW + 16;
+          const badgeH = 22;
+          const badgeX = Math.max(4, Math.min(canvas.width - badgeW - 4, cropBox.x + 8));
+          const badgeY = Math.max(4, cropBox.y - badgeH - 6);
+
+          ctx.fillStyle = 'rgba(18, 20, 24, 0.92)';
+          ctx.strokeStyle = '#FF551F';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          if (typeof ctx.roundRect === 'function') {
+            ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 4);
+          } else {
+            ctx.rect(badgeX, badgeY, badgeW, badgeH);
+          }
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = '#FF551F';
+          ctx.fillText(badgeText, badgeX + 8, badgeY + 15);
+          ctx.restore();
+        }
+      }
     }
 
     // 2D Mesh Wireframe Overlay
@@ -572,6 +671,9 @@ const ViewportComponent: React.FC<ViewportProps> = ({
     effectiveShowMesh,
     meshSettings?.showWireframe,
     currentMeshStats,
+    cropBox,
+    cropLabel,
+    localCropView,
   ]);
 
   useEffect(() => {
@@ -586,6 +688,9 @@ const ViewportComponent: React.FC<ViewportProps> = ({
     effectiveShowMesh,
     meshSettings?.showWireframe,
     currentMeshStats,
+    cropBox,
+    cropLabel,
+    localCropView,
   ]);
 
   const handleWheel = (e: React.WheelEvent) => {
@@ -1159,6 +1264,30 @@ const ViewportComponent: React.FC<ViewportProps> = ({
         </div>
 
         {/* Hero Visual Tools */}
+        {/* Crop Focus Toggle */}
+        {cropBox && cropBox.width > 0 && cropBox.height > 0 && (
+          <button
+            onClick={() => setLocalCropView(!localCropView)}
+            style={{
+              background: localCropView ? '#FF551F' : 'var(--bg-input)',
+              color: localCropView ? '#ffffff' : '#FF551F',
+              border: localCropView ? '1.5px solid #FF551F' : '1px solid rgba(255, 85, 31, 0.4)',
+              padding: '4px 8px',
+              borderRadius: 5,
+              fontWeight: 600,
+              fontSize: 11,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+            }}
+            title={localCropView ? 'Switch to Full Frame' : 'Crop View: Focus on selected sprite/angle'}
+          >
+            <Scissors size={11} />
+            <span>{localCropView ? 'Sprite Focus' : 'Full Frame'}</span>
+          </button>
+        )}
+
         {/* Split-Screen Wipe */}
         <button
           onClick={() => setIsWipeActive(!isWipeActive)}
