@@ -12,6 +12,7 @@ import {
   ArrowDown,
   Check,
   Trash2,
+  GripVertical,
 } from 'lucide-react';
 import { ChromaKeyPanel } from './ChromaKeyPanel';
 import { AiCleanupPanel } from './AiCleanupPanel';
@@ -37,6 +38,7 @@ interface LeftSidebarProps {
   onUpdateTrack: (track: AnimationTrack) => void;
   onToggleTrackEnabled: (id: string) => void;
   onMoveTrack: (id: string, dir: 'up' | 'down') => void;
+  onReorderTracks?: (fromIndex: number, toIndex: number) => void;
   onDeleteTrack?: (id: string) => void;
   onAddFiles: (files: FileList) => void;
   exportScope: ExportScope;
@@ -72,6 +74,7 @@ const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
   onUpdateTrack,
   onToggleTrackEnabled,
   onMoveTrack,
+  onReorderTracks,
   onDeleteTrack,
   onAddFiles,
   exportScope,
@@ -96,6 +99,8 @@ const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<LeftSidebarTab>('media');
+  const [draggedTrackIdx, setDraggedTrackIdx] = useState<number | null>(null);
+  const [dragOverTrackIdx, setDragOverTrackIdx] = useState<number | null>(null);
 
   const enabledCount = tracks.filter((t) => t.enabled).length;
 
@@ -312,9 +317,42 @@ const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
                 ) : (
                   tracks.map((track, index) => {
                     const isSelected = track.id === selectedTrackId;
+                    const isDragged = draggedTrackIdx === index;
+                    const isDragOver = dragOverTrackIdx === index;
+
                     return (
                       <div
                         key={track.id}
+                        draggable={true}
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData('text/plain', String(index));
+                          e.dataTransfer.effectAllowed = 'move';
+                          setDraggedTrackIdx(index);
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = 'move';
+                          if (dragOverTrackIdx !== index) {
+                            setDragOverTrackIdx(index);
+                          }
+                        }}
+                        onDragLeave={() => {
+                          if (dragOverTrackIdx === index) {
+                            setDragOverTrackIdx(null);
+                          }
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          if (draggedTrackIdx !== null && draggedTrackIdx !== index && onReorderTracks) {
+                            onReorderTracks(draggedTrackIdx, index);
+                          }
+                          setDraggedTrackIdx(null);
+                          setDragOverTrackIdx(null);
+                        }}
+                        onDragEnd={() => {
+                          setDraggedTrackIdx(null);
+                          setDragOverTrackIdx(null);
+                        }}
                         onClick={() => onSelectTrack(track.id)}
                         style={{
                           display: 'flex',
@@ -323,17 +361,36 @@ const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
                           padding: '8px 8px',
                           borderRadius: 'var(--radius-sm)',
                           background: isSelected ? 'var(--bg-card-active)' : 'var(--bg-card)',
-                          border: isSelected
+                          border: isDragOver
+                            ? '2px solid #FF551F'
+                            : isSelected
                             ? '1px solid #FF551F'
                             : track.enabled && exportScope === 'master'
                             ? '1px solid #FF551F'
                             : '1px solid var(--border-subtle)',
+                          opacity: isDragged ? 0.4 : 1,
                           cursor: 'pointer',
                           transition: 'all 0.15s ease',
+                          position: 'relative',
                         }}
                       >
-                        {/* Top row: Master checkbox + Thumbnail + Animation Name Input + Reorder buttons */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {/* Top row: Drag Handle + Master checkbox + Thumbnail + Animation Name Input + Reorder buttons + Delete button */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                          {/* Drag-and-Drop Reorder Grip Handle */}
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              cursor: 'grab',
+                              color: 'var(--text-dim)',
+                              flexShrink: 0,
+                            }}
+                            title="Drag to reorder track position"
+                          >
+                            <GripVertical size={13} />
+                          </div>
+
                           {/* Master checkbox */}
                           <input
                             type="checkbox"
@@ -349,6 +406,7 @@ const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
                               width: 14,
                               height: 14,
                               margin: 0,
+                              flexShrink: 0,
                             }}
                           />
 
@@ -406,7 +464,7 @@ const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
                               disabled={index === 0}
                               onClick={() => onMoveTrack(track.id, 'up')}
                               style={{
-                                padding: '1px 3px',
+                                padding: '1px 2px',
                                 background: 'transparent',
                                 border: 'none',
                                 color: index === 0 ? 'var(--text-dim)' : 'var(--text-muted)',
@@ -420,7 +478,7 @@ const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
                               disabled={index === tracks.length - 1}
                               onClick={() => onMoveTrack(track.id, 'down')}
                               style={{
-                                padding: '1px 3px',
+                                padding: '1px 2px',
                                 background: 'transparent',
                                 border: 'none',
                                 color: index === tracks.length - 1 ? 'var(--text-dim)' : 'var(--text-muted)',
@@ -431,6 +489,39 @@ const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
                               <ArrowDown size={10} />
                             </button>
                           </div>
+
+                          {/* Dedicated Track Delete Button */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeleteTrack?.(track.id);
+                            }}
+                            style={{
+                              padding: '3px 4px',
+                              background: 'transparent',
+                              border: 'none',
+                              color: 'var(--text-muted)',
+                              cursor: 'pointer',
+                              borderRadius: 4,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              transition: 'all 0.15s ease',
+                              flexShrink: 0,
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.color = '#ef4444';
+                              e.currentTarget.style.background = 'rgba(239, 68, 68, 0.15)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.color = 'var(--text-muted)';
+                              e.currentTarget.style.background = 'transparent';
+                            }}
+                            title={`Delete track "${track.name}"`}
+                          >
+                            <Trash2 size={12} />
+                          </button>
                         </div>
 
                         {/* Bottom row: Direction badge, Frames count, FPS, Loop Toggle */}

@@ -401,17 +401,23 @@ export const App: React.FC = () => {
         statePreset
       );
       if (result) {
+        const newBox = {
+          x: result.x,
+          y: result.y,
+          width: result.width,
+          height: result.height,
+        };
         setAtlasSettings((prev) => ({
           ...prev,
           frameWidth: result.recommendedCellW,
           frameHeight: result.recommendedCellH,
-          cropBox: {
-            x: result.x,
-            y: result.y,
-            width: result.width,
-            height: result.height,
-          },
+          cropBox: newBox,
         }));
+        if (selectedTrackId) {
+          setTracks((prev) =>
+            prev.map((t) => (t.id === selectedTrackId ? { ...t, cropBox: newBox } : t))
+          );
+        }
       }
     } finally {
       setIsAutoCropping(false);
@@ -423,6 +429,35 @@ export const App: React.FC = () => {
       ...prev,
       cropBox: null,
     }));
+    if (selectedTrackId) {
+      setTracks((prev) =>
+        prev.map((t) => (t.id === selectedTrackId ? { ...t, cropBox: null } : t))
+      );
+    }
+  };
+
+  const handleUpdateCropBox = (newCrop: { x: number; y: number; width: number; height: number } | null) => {
+    setAtlasSettings((prev) => ({
+      ...prev,
+      cropBox: newCrop,
+      frameWidth: newCrop ? newCrop.width : prev.frameWidth,
+      frameHeight: newCrop ? newCrop.height : prev.frameHeight,
+    }));
+    if (selectedTrackId) {
+      setTracks((prev) =>
+        prev.map((t) => (t.id === selectedTrackId ? { ...t, cropBox: newCrop } : t))
+      );
+    }
+  };
+
+  const handleReorderTracks = (fromIdx: number, toIdx: number) => {
+    if (fromIdx === toIdx) return;
+    setTracks((prev) => {
+      const copy = [...prev];
+      const [moved] = copy.splice(fromIdx, 1);
+      copy.splice(toIdx, 0, moved);
+      return copy;
+    });
   };
 
   // 8-Direction Auto-Slice for 3x3 Compass Character Sheets
@@ -1354,6 +1389,28 @@ export const App: React.FC = () => {
     }
   };
 
+  // Global window file drag-and-drop support
+  useEffect(() => {
+    const handleWindowDragOver = (e: DragEvent) => {
+      e.preventDefault();
+      if (e.dataTransfer) {
+        e.dataTransfer.dropEffect = 'copy';
+      }
+    };
+    const handleWindowDrop = (e: DragEvent) => {
+      e.preventDefault();
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        handleLoadFiles(e.dataTransfer.files);
+      }
+    };
+    window.addEventListener('dragover', handleWindowDragOver);
+    window.addEventListener('drop', handleWindowDrop);
+    return () => {
+      window.removeEventListener('dragover', handleWindowDragOver);
+      window.removeEventListener('drop', handleWindowDrop);
+    };
+  }, [handleLoadFiles]);
+
   // Switch between tracks
   const handleSelectTrack = async (id: string) => {
     // 1. Save current timeline state and crop box to active track before switching
@@ -1380,6 +1437,11 @@ export const App: React.FC = () => {
         cropBox: target.cropBox ?? null,
         frameWidth: target.cropBox ? target.cropBox.width : prev.frameWidth,
         frameHeight: target.cropBox ? target.cropBox.height : prev.frameHeight,
+      }));
+    } else {
+      setAtlasSettings((prev) => ({
+        ...prev,
+        cropBox: null,
       }));
     }
 
@@ -2230,6 +2292,7 @@ export const App: React.FC = () => {
           onUpdateTrack={handleUpdateTrack}
           onToggleTrackEnabled={handleToggleTrackEnabled}
           onMoveTrack={handleMoveTrack}
+          onReorderTracks={handleReorderTracks}
           onDeleteTrack={handleDeleteTrack}
           onAddFiles={handleLoadFiles}
           exportScope={exportScope}
@@ -2325,6 +2388,7 @@ export const App: React.FC = () => {
             renderTrigger={renderTrigger}
             cropBox={atlasSettings.cropBox}
             cropLabel={tracks.find((t) => t.id === selectedTrackId)?.directionLabel}
+            onUpdateCropBox={handleUpdateCropBox}
           />
 
           {/* Timeline */}

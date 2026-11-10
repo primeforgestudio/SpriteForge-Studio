@@ -425,6 +425,124 @@ const AtlasPanelComponent: React.FC<AtlasPanelProps> = ({
           )}
         </button>
 
+        {/* Manual Precision Coordinates & Drag Note */}
+        {settings.cropBox && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, background: 'var(--bg-input)', padding: '6px 8px', borderRadius: 4, border: '1px solid var(--border-subtle)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600 }}>Crop Box Coordinates</span>
+              <span style={{ fontSize: 9, color: '#FF551F', fontWeight: 600 }}>Interactive on Viewport</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4 }}>
+              <div>
+                <span style={{ fontSize: 9, color: 'var(--text-dim)', display: 'block', marginBottom: 2 }}>X</span>
+                <input
+                  type="number"
+                  value={settings.cropBox.x}
+                  onChange={(e) => {
+                    const val = Math.max(0, parseInt(e.target.value) || 0);
+                    onChange({
+                      ...settings,
+                      cropBox: { ...settings.cropBox!, x: val },
+                    });
+                  }}
+                  style={{
+                    width: '100%',
+                    height: 22,
+                    fontSize: 10,
+                    fontWeight: 600,
+                    background: '#121316',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: 3,
+                    color: 'var(--text-bright)',
+                    padding: '0 4px',
+                    fontFamily: 'monospace',
+                  }}
+                />
+              </div>
+              <div>
+                <span style={{ fontSize: 9, color: 'var(--text-dim)', display: 'block', marginBottom: 2 }}>Y</span>
+                <input
+                  type="number"
+                  value={settings.cropBox.y}
+                  onChange={(e) => {
+                    const val = Math.max(0, parseInt(e.target.value) || 0);
+                    onChange({
+                      ...settings,
+                      cropBox: { ...settings.cropBox!, y: val },
+                    });
+                  }}
+                  style={{
+                    width: '100%',
+                    height: 22,
+                    fontSize: 10,
+                    fontWeight: 600,
+                    background: '#121316',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: 3,
+                    color: 'var(--text-bright)',
+                    padding: '0 4px',
+                    fontFamily: 'monospace',
+                  }}
+                />
+              </div>
+              <div>
+                <span style={{ fontSize: 9, color: 'var(--text-dim)', display: 'block', marginBottom: 2 }}>Width</span>
+                <input
+                  type="number"
+                  value={settings.cropBox.width}
+                  onChange={(e) => {
+                    const val = Math.max(16, parseInt(e.target.value) || 16);
+                    onChange({
+                      ...settings,
+                      frameWidth: val,
+                      cropBox: { ...settings.cropBox!, width: val },
+                    });
+                  }}
+                  style={{
+                    width: '100%',
+                    height: 22,
+                    fontSize: 10,
+                    fontWeight: 600,
+                    background: '#121316',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: 3,
+                    color: 'var(--text-bright)',
+                    padding: '0 4px',
+                    fontFamily: 'monospace',
+                  }}
+                />
+              </div>
+              <div>
+                <span style={{ fontSize: 9, color: 'var(--text-dim)', display: 'block', marginBottom: 2 }}>Height</span>
+                <input
+                  type="number"
+                  value={settings.cropBox.height}
+                  onChange={(e) => {
+                    const val = Math.max(16, parseInt(e.target.value) || 16);
+                    onChange({
+                      ...settings,
+                      frameHeight: val,
+                      cropBox: { ...settings.cropBox!, height: val },
+                    });
+                  }}
+                  style={{
+                    width: '100%',
+                    height: 22,
+                    fontSize: 10,
+                    fontWeight: 600,
+                    background: '#121316',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: 3,
+                    color: 'var(--text-bright)',
+                    padding: '0 4px',
+                    fontFamily: 'monospace',
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* 8-Direction Auto-Slice Button */}
         {onSliceEightDirections && (
           <button

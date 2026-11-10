@@ -138,11 +138,11 @@ export class DirectionSlicer {
     const paddedW = Math.round(maxCharW * 1.16);
     const paddedH = Math.round(maxCharH * 1.16);
 
-    // Uniform square or clean game-ready cell size
-    const uniformCellSize = Math.min(
-      Math.max(cellW, cellH),
-      Math.max(64, roundToMultiple(Math.max(paddedW, paddedH), 16))
-    );
+    // Uniform square or clean game-ready cell size:
+    // Strictly bounded by cell sector dimensions to prevent vertical row overlaps in 16:9 / non-square video
+    const maxSectorDimension = Math.min(cellW, cellH);
+    const candidateSize = Math.max(64, roundToMultiple(Math.max(paddedW, paddedH), 16));
+    const uniformCellSize = Math.min(maxSectorDimension, candidateSize);
     const uniformCellW = uniformCellSize;
     const uniformCellH = uniformCellSize;
 
@@ -158,6 +158,11 @@ export class DirectionSlicer {
       const d = COMPASS_DIRECTIONS_8[i];
       const b = bounds[d.key];
 
+      const sectorXStart = d.col * cellW;
+      const sectorXEnd = Math.min(fullW, (d.col + 1) * cellW);
+      const sectorYStart = d.row * cellH;
+      const sectorYEnd = Math.min(fullH, (d.row + 1) * cellH);
+
       let centerX: number;
       let groundY: number;
 
@@ -166,17 +171,17 @@ export class DirectionSlicer {
         groundY = b.maxY;
       } else {
         // Fallback to center of 3x3 partition
-        centerX = d.col * cellW + cellW / 2;
-        groundY = (d.row + 1) * cellH - Math.round(cellH * 0.05);
+        centerX = sectorXStart + cellW / 2;
+        groundY = sectorYEnd - Math.round(cellH * 0.05);
       }
 
       // Crop box anchored with ground near bottom (90% height)
       let cropX = Math.round(centerX - uniformCellW / 2);
       let cropY = Math.round(groundY - uniformCellH * 0.90);
 
-      // Clamp inside full frame bounds
-      cropX = Math.max(0, Math.min(fullW - uniformCellW, cropX));
-      cropY = Math.max(0, Math.min(fullH - uniformCellH, cropY));
+      // Clamp strictly within this direction's 3x3 sector
+      cropX = Math.max(sectorXStart, Math.min(sectorXEnd - uniformCellW, cropX));
+      cropY = Math.max(sectorYStart, Math.min(sectorYEnd - uniformCellH, cropY));
 
       const cropBox = {
         x: cropX,

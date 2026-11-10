@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { BackgroundMode, GarbageMatteSettings, CollisionSettings, MeshSettings, SpriteMesh } from '../core/types';
-import { Plus, Minus, RotateCcw, Maximize2, Pipette, Crosshair, Layers, Scissors, Shield, Columns, Sun, Lightbulb, Eye, ChevronDown, Check, Box, UploadCloud } from 'lucide-react';
+import { Plus, Minus, RotateCcw, Maximize2, Pipette, Crosshair, Layers, Scissors, Shield, Columns, Sun, Lightbulb, Eye, ChevronDown, Check, Box, UploadCloud, X, Crop } from 'lucide-react';
 import { NormalMapGenerator } from '../core/normalMapGenerator';
 import { PbrGenerator } from '../core/pbrGenerator';
 import { MeshGenerator } from '../core/meshGenerator';
@@ -53,6 +53,7 @@ interface ViewportProps {
   cropLabel?: string;
   isCropView?: boolean;
   setIsCropView?: (val: boolean) => void;
+  onUpdateCropBox?: (cropBox: { x: number; y: number; width: number; height: number } | null) => void;
 }
 
 const ViewportComponent: React.FC<ViewportProps> = ({
@@ -97,6 +98,7 @@ const ViewportComponent: React.FC<ViewportProps> = ({
   cropLabel,
   isCropView,
   setIsCropView,
+  onUpdateCropBox,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const displayCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -116,6 +118,119 @@ const ViewportComponent: React.FC<ViewportProps> = ({
   const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [hoverColor, setHoverColor] = useState<[number, number, number] | null>(null);
   const [isDraggingPivot, setIsDraggingPivot] = useState(false);
+
+  // Interactive Crop Box Drag & Resize State
+  type CropDragHandle = 'move' | 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'w' | 'e';
+  const [cropDragMode, setCropDragMode] = useState<CropDragHandle | null>(null);
+  const cropDragRef = useRef<{
+    mode: CropDragHandle;
+    startX: number;
+    startY: number;
+    initialBox: { x: number; y: number; width: number; height: number };
+  } | null>(null);
+
+  useEffect(() => {
+    if (!cropDragMode) return;
+
+    const onWindowMouseMove = (e: MouseEvent) => {
+      if (!cropDragRef.current || !onUpdateCropBox || !frameCanvas) return;
+      const { mode, startX, startY, initialBox } = cropDragRef.current;
+      const dx = (e.clientX - startX) / zoom;
+      const dy = (e.clientY - startY) / zoom;
+
+      const fullW = frameCanvas.width;
+      const fullH = frameCanvas.height;
+
+      let nextX = initialBox.x;
+      let nextY = initialBox.y;
+      let nextW = initialBox.width;
+      let nextH = initialBox.height;
+
+      const minDim = 32;
+
+      switch (mode) {
+        case 'move': {
+          nextX = Math.max(0, Math.min(fullW - initialBox.width, initialBox.x + dx));
+          nextY = Math.max(0, Math.min(fullH - initialBox.height, initialBox.y + dy));
+          break;
+        }
+        case 'se': {
+          nextW = Math.max(minDim, Math.min(fullW - initialBox.x, initialBox.width + dx));
+          nextH = Math.max(minDim, Math.min(fullH - initialBox.y, initialBox.height + dy));
+          break;
+        }
+        case 'e': {
+          nextW = Math.max(minDim, Math.min(fullW - initialBox.x, initialBox.width + dx));
+          break;
+        }
+        case 's': {
+          nextH = Math.max(minDim, Math.min(fullH - initialBox.y, initialBox.height + dy));
+          break;
+        }
+        case 'nw': {
+          nextX = Math.max(0, Math.min(initialBox.x + initialBox.width - minDim, initialBox.x + dx));
+          nextY = Math.max(0, Math.min(initialBox.y + initialBox.height - minDim, initialBox.y + dy));
+          nextW = initialBox.width - (nextX - initialBox.x);
+          nextH = initialBox.height - (nextY - initialBox.y);
+          break;
+        }
+        case 'ne': {
+          nextY = Math.max(0, Math.min(initialBox.y + initialBox.height - minDim, initialBox.y + dy));
+          nextW = Math.max(minDim, Math.min(fullW - initialBox.x, initialBox.width + dx));
+          nextH = initialBox.height - (nextY - initialBox.y);
+          break;
+        }
+        case 'sw': {
+          nextX = Math.max(0, Math.min(initialBox.x + initialBox.width - minDim, initialBox.x + dx));
+          nextW = initialBox.width - (nextX - initialBox.x);
+          nextH = Math.max(minDim, Math.min(fullH - initialBox.y, initialBox.height + dy));
+          break;
+        }
+        case 'n': {
+          nextY = Math.max(0, Math.min(initialBox.y + initialBox.height - minDim, initialBox.y + dy));
+          nextH = initialBox.height - (nextY - initialBox.y);
+          break;
+        }
+        case 'w': {
+          nextX = Math.max(0, Math.min(initialBox.x + initialBox.width - minDim, initialBox.x + dx));
+          nextW = initialBox.width - (nextX - initialBox.x);
+          break;
+        }
+      }
+
+      onUpdateCropBox({
+        x: Math.round(nextX),
+        y: Math.round(nextY),
+        width: Math.round(nextW),
+        height: Math.round(nextH),
+      });
+    };
+
+    const onWindowMouseUp = () => {
+      setCropDragMode(null);
+      cropDragRef.current = null;
+    };
+
+    window.addEventListener('mousemove', onWindowMouseMove);
+    window.addEventListener('mouseup', onWindowMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', onWindowMouseMove);
+      window.removeEventListener('mouseup', onWindowMouseUp);
+    };
+  }, [cropDragMode, zoom, frameCanvas, onUpdateCropBox]);
+
+  const startCropDrag = (e: React.MouseEvent, handle: CropDragHandle) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!cropBox) return;
+    cropDragRef.current = {
+      mode: handle,
+      startX: e.clientX,
+      startY: e.clientY,
+      initialBox: { ...cropBox },
+    };
+    setCropDragMode(handle);
+  };
 
   // 2D Mesh Wireframe & Fillrate Stats State
   const [localShowMeshWireframe, setLocalShowMeshWireframe] = useState(false);
@@ -1264,14 +1379,66 @@ const ViewportComponent: React.FC<ViewportProps> = ({
         </div>
 
         {/* Hero Visual Tools */}
-        {/* Crop Focus Toggle */}
-        {cropBox && cropBox.width > 0 && cropBox.height > 0 && (
+        {/* Crop Focus Toggle & Controls */}
+        {cropBox && cropBox.width > 0 && cropBox.height > 0 ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+            <button
+              onClick={() => setLocalCropView(!localCropView)}
+              style={{
+                background: localCropView ? '#FF551F' : 'var(--bg-input)',
+                color: localCropView ? '#ffffff' : '#FF551F',
+                border: localCropView ? '1.5px solid #FF551F' : '1px solid rgba(255, 85, 31, 0.4)',
+                padding: '4px 8px',
+                borderRadius: 5,
+                fontWeight: 600,
+                fontSize: 11,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+              }}
+              title={localCropView ? 'Switch to Full Frame' : 'Crop View: Focus on selected sprite/angle'}
+            >
+              <Scissors size={11} />
+              <span>{localCropView ? 'Sprite Focus' : 'Full Frame'}</span>
+            </button>
+            {onUpdateCropBox && (
+              <button
+                onClick={() => onUpdateCropBox(null)}
+                style={{
+                  background: 'var(--bg-input)',
+                  color: 'var(--text-muted)',
+                  border: '1px solid var(--border-subtle)',
+                  padding: '4px 6px',
+                  borderRadius: 5,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 3,
+                  fontSize: 10,
+                }}
+                title="Clear Crop (Use full video frame)"
+              >
+                <X size={11} />
+                <span>Reset</span>
+              </button>
+            )}
+          </div>
+        ) : onUpdateCropBox && frameCanvas ? (
           <button
-            onClick={() => setLocalCropView(!localCropView)}
+            onClick={() => {
+              const side = Math.min(512, Math.min(frameCanvas.width, frameCanvas.height));
+              onUpdateCropBox({
+                x: Math.round((frameCanvas.width - side) / 2),
+                y: Math.round((frameCanvas.height - side) / 2),
+                width: side,
+                height: side,
+              });
+            }}
             style={{
-              background: localCropView ? '#FF551F' : 'var(--bg-input)',
-              color: localCropView ? '#ffffff' : '#FF551F',
-              border: localCropView ? '1.5px solid #FF551F' : '1px solid rgba(255, 85, 31, 0.4)',
+              background: 'var(--bg-input)',
+              color: '#FF551F',
+              border: '1px solid rgba(255, 85, 31, 0.4)',
               padding: '4px 8px',
               borderRadius: 5,
               fontWeight: 600,
@@ -1281,12 +1448,12 @@ const ViewportComponent: React.FC<ViewportProps> = ({
               alignItems: 'center',
               gap: 4,
             }}
-            title={localCropView ? 'Switch to Full Frame' : 'Crop View: Focus on selected sprite/angle'}
+            title="Create interactive Crop Box to isolate sprite/character"
           >
-            <Scissors size={11} />
-            <span>{localCropView ? 'Sprite Focus' : 'Full Frame'}</span>
+            <Crop size={11} />
+            <span>+ Crop Box</span>
           </button>
-        )}
+        ) : null}
 
         {/* Split-Screen Wipe */}
         <button
@@ -1468,6 +1635,190 @@ const ViewportComponent: React.FC<ViewportProps> = ({
           className={bgMode === 'checkerboard' ? 'checkerboard' : ''}
         >
           <canvas ref={displayCanvasRef} style={{ display: 'block', borderRadius: 4 }} />
+
+          {/* Interactive Draggable & Resizable Crop Box Gizmo */}
+          {!localCropView && cropBox && cropBox.width > 0 && cropBox.height > 0 && onUpdateCropBox && (
+            <div
+              onMouseDown={(e) => startCropDrag(e, 'move')}
+              style={{
+                position: 'absolute',
+                left: cropBox.x,
+                top: cropBox.y,
+                width: cropBox.width,
+                height: cropBox.height,
+                border: '2px solid #FF551F',
+                boxShadow: '0 0 12px rgba(255, 85, 31, 0.5), inset 0 0 8px rgba(255, 85, 31, 0.15)',
+                boxSizing: 'border-box',
+                cursor: cropDragMode === 'move' ? 'grabbing' : 'grab',
+                zIndex: 25,
+                userSelect: 'none',
+              }}
+              title="Click and drag to move crop box over subject"
+            >
+              {/* Corner Handles */}
+              <div
+                onMouseDown={(e) => startCropDrag(e, 'nw')}
+                style={{
+                  position: 'absolute',
+                  top: -5,
+                  left: -5,
+                  width: 10,
+                  height: 10,
+                  background: '#FF551F',
+                  border: '1.5px solid #fff',
+                  borderRadius: 2,
+                  cursor: 'nwse-resize',
+                  zIndex: 30,
+                }}
+                title="Resize Top-Left"
+              />
+              <div
+                onMouseDown={(e) => startCropDrag(e, 'ne')}
+                style={{
+                  position: 'absolute',
+                  top: -5,
+                  right: -5,
+                  width: 10,
+                  height: 10,
+                  background: '#FF551F',
+                  border: '1.5px solid #fff',
+                  borderRadius: 2,
+                  cursor: 'nesw-resize',
+                  zIndex: 30,
+                }}
+                title="Resize Top-Right"
+              />
+              <div
+                onMouseDown={(e) => startCropDrag(e, 'sw')}
+                style={{
+                  position: 'absolute',
+                  bottom: -5,
+                  left: -5,
+                  width: 10,
+                  height: 10,
+                  background: '#FF551F',
+                  border: '1.5px solid #fff',
+                  borderRadius: 2,
+                  cursor: 'nesw-resize',
+                  zIndex: 30,
+                }}
+                title="Resize Bottom-Left"
+              />
+              <div
+                onMouseDown={(e) => startCropDrag(e, 'se')}
+                style={{
+                  position: 'absolute',
+                  bottom: -5,
+                  right: -5,
+                  width: 10,
+                  height: 10,
+                  background: '#FF551F',
+                  border: '1.5px solid #fff',
+                  borderRadius: 2,
+                  cursor: 'nwse-resize',
+                  zIndex: 30,
+                }}
+                title="Resize Bottom-Right"
+              />
+
+              {/* Edge Midpoint Handles */}
+              <div
+                onMouseDown={(e) => startCropDrag(e, 'n')}
+                style={{
+                  position: 'absolute',
+                  top: -4,
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  width: 18,
+                  height: 7,
+                  background: '#FF551F',
+                  border: '1px solid #fff',
+                  borderRadius: 2,
+                  cursor: 'ns-resize',
+                  zIndex: 30,
+                }}
+                title="Resize Top"
+              />
+              <div
+                onMouseDown={(e) => startCropDrag(e, 's')}
+                style={{
+                  position: 'absolute',
+                  bottom: -4,
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  width: 18,
+                  height: 7,
+                  background: '#FF551F',
+                  border: '1px solid #fff',
+                  borderRadius: 2,
+                  cursor: 'ns-resize',
+                  zIndex: 30,
+                }}
+                title="Resize Bottom"
+              />
+              <div
+                onMouseDown={(e) => startCropDrag(e, 'w')}
+                style={{
+                  position: 'absolute',
+                  left: -4,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  width: 7,
+                  height: 18,
+                  background: '#FF551F',
+                  border: '1px solid #fff',
+                  borderRadius: 2,
+                  cursor: 'ew-resize',
+                  zIndex: 30,
+                }}
+                title="Resize Left"
+              />
+              <div
+                onMouseDown={(e) => startCropDrag(e, 'e')}
+                style={{
+                  position: 'absolute',
+                  right: -4,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  width: 7,
+                  height: 18,
+                  background: '#FF551F',
+                  border: '1px solid #fff',
+                  borderRadius: 2,
+                  cursor: 'ew-resize',
+                  zIndex: 30,
+                }}
+                title="Resize Right"
+              />
+
+              {/* Floating Live Dimensions & Position Badge */}
+              <div
+                style={{
+                  position: 'absolute',
+                  top: -26,
+                  left: 0,
+                  background: 'rgba(18, 20, 24, 0.95)',
+                  border: '1px solid #FF551F',
+                  borderRadius: 4,
+                  padding: '2px 8px',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  color: '#FF551F',
+                  whiteSpace: 'nowrap',
+                  pointerEvents: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
+                  zIndex: 35,
+                }}
+              >
+                <span>{cropLabel || 'Crop Box'}</span>
+                <span style={{ color: '#ffffff' }}>{cropBox.width}×{cropBox.height}</span>
+                <span style={{ color: 'var(--text-dim)', fontSize: 9 }}>({cropBox.x}, {cropBox.y})</span>
+              </div>
+            </div>
+          )}
 
           {/* Split-Screen Wipe Interactive Drag Handle */}
           {isWipeActive && (
