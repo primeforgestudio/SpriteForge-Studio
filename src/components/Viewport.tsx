@@ -68,6 +68,9 @@ interface ViewportProps {
   onResetFrameRetouch?: () => void;
   hasFrameRetouch?: boolean;
   isCurrentFrameHidden?: boolean;
+  // Viewport Processing / Loading Animation
+  busyStatus?: { title: string; detail?: string; progress?: number } | null;
+  isUpdatingPreview?: boolean;
 }
 
 const ViewportComponent: React.FC<ViewportProps> = ({
@@ -126,6 +129,8 @@ const ViewportComponent: React.FC<ViewportProps> = ({
   onResetFrameRetouch,
   hasFrameRetouch = false,
   isCurrentFrameHidden = false,
+  busyStatus = null,
+  isUpdatingPreview = false,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const displayCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -1593,6 +1598,137 @@ const ViewportComponent: React.FC<ViewportProps> = ({
           </button>
         )}
       </div>
+
+      {/* Full Animated Viewport Processing Overlay */}
+      {busyStatus && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 60,
+            background: 'rgba(13, 14, 18, 0.72)',
+            backdropFilter: 'blur(5px)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 14,
+            pointerEvents: 'auto',
+          }}
+        >
+          {/* Dual Concentric Orange Loader Rings */}
+          <div style={{ position: 'relative', width: 58, height: 58, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div
+              className="animate-spin"
+              style={{
+                position: 'absolute',
+                inset: 0,
+                borderRadius: '50%',
+                border: '3px solid rgba(255, 85, 31, 0.16)',
+                borderTopColor: '#FF551F',
+                boxShadow: '0 0 18px rgba(255, 85, 31, 0.35)',
+              }}
+            />
+            <div
+              className="animate-spin-reverse"
+              style={{
+                position: 'absolute',
+                inset: 9,
+                borderRadius: '50%',
+                border: '2.5px solid rgba(255, 255, 255, 0.08)',
+                borderBottomColor: '#ff8a50',
+              }}
+            />
+            <div
+              style={{
+                width: 10,
+                height: 10,
+                borderRadius: '50%',
+                background: '#FF551F',
+                boxShadow: '0 0 12px #FF551F',
+              }}
+            />
+          </div>
+
+          <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#ffffff', letterSpacing: '0.2px' }}>
+              {busyStatus.title}
+            </div>
+            {busyStatus.detail && (
+              <div style={{ fontSize: 11, color: '#FF551F', fontWeight: 600, fontFamily: 'monospace' }}>
+                {busyStatus.detail}
+              </div>
+            )}
+          </div>
+
+          {/* Progress Bar (Determinate or Indeterminate Shimmer) */}
+          <div
+            style={{
+              width: 240,
+              height: 5,
+              borderRadius: 4,
+              background: 'rgba(255, 255, 255, 0.1)',
+              overflow: 'hidden',
+              border: '1px solid rgba(255, 255, 255, 0.06)',
+            }}
+          >
+            {busyStatus.progress !== undefined ? (
+              <div
+                style={{
+                  width: `${Math.max(4, Math.min(100, busyStatus.progress))}%`,
+                  height: '100%',
+                  background: 'linear-gradient(90deg, #FF551F, #ff8a50)',
+                  transition: 'width 0.15s ease',
+                }}
+              />
+            ) : (
+              <div
+                className="animate-indeterminate"
+                style={{
+                  height: '100%',
+                  background: 'linear-gradient(90deg, transparent, #FF551F, #ff8a50, transparent)',
+                  borderRadius: 4,
+                }}
+              />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Non-Blocking Atlas Preview Update Badge */}
+      {!busyStatus && isUpdatingPreview && hasMedia && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 14,
+            right: 14,
+            zIndex: 24,
+            background: 'rgba(23, 24, 28, 0.92)',
+            border: '1px solid rgba(255, 85, 31, 0.5)',
+            borderRadius: 20,
+            padding: '5px 12px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            boxShadow: '0 4px 16px rgba(0, 0, 0, 0.5)',
+            pointerEvents: 'none',
+          }}
+        >
+          <div
+            className="animate-spin"
+            style={{
+              width: 13,
+              height: 13,
+              borderRadius: '50%',
+              border: '2px solid rgba(255, 85, 31, 0.25)',
+              borderTopColor: '#FF551F',
+            }}
+          />
+          <span style={{ fontSize: 11, fontWeight: 600, color: '#ffffff' }}>
+            Updating Atlas Preview...
+          </span>
+        </div>
+      )}
 
       {/* Hidden Frame Banner */}
       {hasMedia && isCurrentFrameHidden && (

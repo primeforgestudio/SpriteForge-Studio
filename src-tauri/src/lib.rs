@@ -430,6 +430,16 @@ fn save_export_files_native_cmd(
     }
 }
 
+#[tauri::command]
+fn read_project_by_path_cmd(file_path: String) -> Result<String, String> {
+    std::fs::read_to_string(&file_path).map_err(|e| format!("Failed to read project {}: {}", file_path, e))
+}
+
+#[tauri::command]
+fn exit_app_cmd(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -451,7 +461,9 @@ pub fn run() {
             save_to_library_cmd,
             list_library_cmd,
             load_library_file_cmd,
-            delete_library_file_cmd
+            delete_library_file_cmd,
+            read_project_by_path_cmd,
+            exit_app_cmd
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -27,13 +27,15 @@ import {
 } from './core/storage';
 import { WebGLKeyer } from './core/webglKeyer';
 import { globalHistory } from './core/history';
-import { FolderCheck } from 'lucide-react';
-import { ProjectManager } from './core/projectManager';
+import { FolderCheck, AlertTriangle, Save } from 'lucide-react';
+import { isTauriEnvironment } from './core/tauriBridge';
+import { ProjectManager, RecentProjectItem } from './core/projectManager';
 import { ProjectLibraryManager } from './core/projectLibrary';
 import { AiBackgroundRemover } from './core/aiBackgroundRemover';
 import { FrameRetouchEngine } from './core/frameRetouch';
 import { SpriteForgeProject, RetouchTool } from './core/types';
 import { Header } from './components/Header';
+import { HomeScreen } from './components/HomeScreen';
 import { LeftSidebar, LoadedFileItem } from './components/LeftSidebar';
 import { Viewport } from './components/Viewport';
 import { Timeline } from './components/Timeline';
@@ -60,12 +62,33 @@ export const App: React.FC = () => {
   const [selectedTrackId, setSelectedTrackId] = useState<string>('');
   const [exportScope, setExportScope] = useState<ExportScope>('single');
 
+  // Home Screen & Recent Projects
+  const [showHomeScreen, setShowHomeScreen] = useState<boolean>(true);
+  const [recentProjects, setRecentProjects] = useState<RecentProjectItem[]>(() =>
+    ProjectManager.getRecentProjects()
+  );
+
+  // Viewport Loading / Processing Indicator
+  const [customBusyStatus, setCustomBusyStatus] = useState<{
+    title: string;
+    detail?: string;
+    progress?: number;
+  } | null>(null);
+  const [isUpdatingPreviewState, setIsUpdatingPreviewState] = useState<boolean>(false);
+
+  // Unsaved Changes & Native Close Confirmation
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean>(false);
+  const [isCloseConfirmOpen, setIsCloseConfirmOpen] = useState<boolean>(false);
+  const allowCloseRef = useRef<boolean>(false);
+  const hasUnsavedRef = useRef<boolean>(false);
+  const suppressDirtyRef = useRef<boolean>(false);
+
   // Project Save / Open State (.sfproj) & Character Library
   const [projectName, setProjectName] = useState<string>('');
   const [currentProjectFilePath, setCurrentProjectFilePath] = useState<string | null>(null);
   const [isSavingProject, setIsSavingProject] = useState<boolean>(false);
   const [isLibraryOpen, setIsLibraryOpen] = useState<boolean>(false);
-  const handleSaveProjectRef = useRef<() => void>(() => {});
+  const handleSaveProjectRef = useRef<() => Promise<boolean>>(async () => false);
   const handleOpenProjectRef = useRef<() => void>(() => {});
   const loadProjectStateRef = useRef<((project: SpriteForgeProject, filePath?: string) => Promise<void>) | null>(null);
 
@@ -325,6 +348,62 @@ export const App: React.FC = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleUndo, handleRedo]);
+
+  // Track unsaved changes whenever project state mutates with active media
+  useEffect(() => {
+    if (suppressDirtyRef.current) {
+      suppressDirtyRef.current = false;
+      return;
+    }
+    if (tracks.length > 0) {
+      setHasUnsavedChanges(true);
+    } else {
+      setHasUnsavedChanges(false);
+    }
+  }, [tracks, keyingSettings, atlasSettings, spritesSettings, markers, hiddenFrames, retouchVersion, cropStart, cropEnd]);
+
+  useEffect(() => {
+    hasUnsavedRef.current = hasUnsavedChanges && tracks.length > 0;
+  }, [hasUnsavedChanges, tracks.length]);
+
+  // Intercept native window close (X button) to prompt saving unsaved project
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!allowCloseRef.current && hasUnsavedRef.current) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+
+    let unlistenTauri: (() => void) | null = null;
+    let mounted = true;
+    if (isTauriEnvironment()) {
+      import('@tauri-apps/api/window')
+        .then(({ getCurrentWindow }) => {
+          if (!mounted) return;
+          getCurrentWindow()
+            .onCloseRequested((event) => {
+              if (allowCloseRef.current) return;
+              if (hasUnsavedRef.current) {
+                event.preventDefault();
+                setIsCloseConfirmOpen(true);
+              }
+            })
+            .then((unlisten) => {
+              if (mounted) unlistenTauri = unlisten;
+              else unlisten();
+            });
+        })
+        .catch(() => {});
+    }
+
+    return () => {
+      mounted = false;
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      if (unlistenTauri) unlistenTauri();
+    };
+  }, []);
 
   // Dual-Stream Matte Actions
   const handleLoadMaskMedia = async (file: File) => {
@@ -1235,6 +1314,7 @@ export const App: React.FC = () => {
     if (loader.metadata.totalFrames <= 0 || activeMarkers.length === 0) return;
 
     isUpdatingAtlasRef.current = true;
+    setIsUpdatingPreviewState(true);
 
     try {
       const fw = atlasSettings.frameWidth;
@@ -1364,6 +1444,7 @@ export const App: React.FC = () => {
       setAtlasCanvas(atlas);
     } finally {
       isUpdatingAtlasRef.current = false;
+      setIsUpdatingPreviewState(false);
     }
   }, [mode, markers, hiddenFrames, retouchVersion, atlasSettings, keyingSettings, getKeyedFrameCanvas]);
 
@@ -1388,6 +1469,12 @@ export const App: React.FC = () => {
   const handleLoadFiles = async (fileList: FileList) => {
     const files = Array.from(fileList);
     if (files.length === 0) return;
+
+    setShowHomeScreen(false);
+    setCustomBusyStatus({
+      title: 'Loading Media & Decoding Frames...',
+      detail: files[0]?.name || 'Media Sequence',
+    });
 
     const first = files[0];
     const isVideo = first.type.startsWith('video/') || /\.(mp4|webm|mov|avi)$/i.test(first.name);
@@ -1508,6 +1595,8 @@ export const App: React.FC = () => {
       }
     } catch (e: any) {
       alert(`Error loading media: ${e.message}`);
+    } finally {
+      setCustomBusyStatus(null);
     }
   };
 
@@ -1670,7 +1759,13 @@ export const App: React.FC = () => {
   // SPRITEFORGE PROJECT SYSTEM (.sfproj)
   // ==========================================
   const loadProjectState = async (project: SpriteForgeProject, filePath?: string) => {
+    setShowHomeScreen(false);
+    setCustomBusyStatus({
+      title: 'Opening Project...',
+      detail: project.name || filePath || 'Restoring workspace',
+    });
     try {
+      suppressDirtyRef.current = true;
       if (project.appMode) setMode(project.appMode);
       if (project.exportScope) setExportScope(project.exportScope);
       if (project.exportFilename) setExportFilename(project.exportFilename);
@@ -1691,6 +1786,7 @@ export const App: React.FC = () => {
         });
       }
 
+      suppressDirtyRef.current = true;
       setTracks(restoredTracks);
 
       // Restore active track
@@ -1717,26 +1813,48 @@ export const App: React.FC = () => {
         }
       }
 
+      const displayName = filePath ? filePath.split(/[\\/]/).pop() || filePath : project.name || 'Untitled_Project.sfproj';
       if (filePath) {
         setCurrentProjectFilePath(filePath);
-        const baseName = filePath.split(/[\\/]/).pop() || filePath;
-        setProjectName(baseName);
+        setProjectName(displayName);
+        const firstTrack = restoredTracks[0];
+        const updatedRecent = ProjectManager.addRecentProject({
+          name: displayName,
+          filePath,
+          thumbnailUrl: firstTrack?.thumbnailUrl,
+          framesCount: firstTrack?.markers?.length || firstTrack?.totalFrames || 0,
+          fps: project.atlasSettings?.fps || 24,
+          savedAt: new Date().toISOString(),
+        });
+        setRecentProjects(updatedRecent);
       } else {
-        setProjectName(project.name || 'Untitled_Project.sfproj');
+        setProjectName(displayName);
       }
 
+      setHasUnsavedChanges(false);
       setExportToast(`✓ Loaded Project "${project.name}"`);
       setTimeout(() => setExportToast(null), 4000);
     } catch (err: any) {
       alert(`Error loading project: ${err.message}`);
+    } finally {
+      setCustomBusyStatus(null);
     }
   };
 
-  const handleSaveProject = async () => {
-    if (isSavingProject) return;
+  const handleSaveProject = async (): Promise<boolean> => {
+    if (isSavingProject) return false;
     setIsSavingProject(true);
+    setCustomBusyStatus({
+      title: 'Saving Project...',
+      detail: 'Packaging tracks, keyframes & settings',
+    });
     try {
       const activeName = (projectName || exportFilename || 'SpriteForge_Project').replace(/\.sfproj$/i, '');
+      const syncedTracks = tracks.map((t) =>
+        t.id === selectedTrackId
+          ? { ...t, cropStart, cropEnd, markers, hiddenFrames, fps: atlasSettings.fps, cropBox: atlasSettings.cropBox }
+          : t
+      );
       const project = await ProjectManager.serializeProject({
         projectName: activeName,
         appMode: mode,
@@ -1745,7 +1863,7 @@ export const App: React.FC = () => {
         keyingSettings,
         atlasSettings,
         spritesSettings,
-        tracks,
+        tracks: syncedTracks,
         selectedTrackId,
         currentFrame,
         maskFilename,
@@ -1754,20 +1872,37 @@ export const App: React.FC = () => {
       });
 
       const res = await ProjectManager.saveProject(project, currentProjectFilePath || activeName);
-      if (res.canceled) return;
+      if (res.canceled) return false;
       if (res.success && res.filePath) {
         setCurrentProjectFilePath(res.filePath);
         const baseName = res.filePath.split(/[\\/]/).pop() || res.filePath;
         setProjectName(baseName);
+        setHasUnsavedChanges(false);
+
+        const firstTrack = syncedTracks[0];
+        const updatedRecent = ProjectManager.addRecentProject({
+          name: baseName,
+          filePath: res.filePath,
+          thumbnailUrl: firstTrack?.thumbnailUrl,
+          framesCount: firstTrack?.markers?.length || firstTrack?.totalFrames || 0,
+          fps: atlasSettings.fps || 24,
+          savedAt: new Date().toISOString(),
+        });
+        setRecentProjects(updatedRecent);
+
         setExportToast(`✓ Project saved to "${baseName}"`);
         setTimeout(() => setExportToast(null), 4000);
+        return true;
       } else if (res.error) {
         alert(`Failed to save project: ${res.error}`);
       }
+      return false;
     } catch (e: any) {
       alert(`Error saving project: ${e.message}`);
+      return false;
     } finally {
       setIsSavingProject(false);
+      setCustomBusyStatus(null);
     }
   };
 
@@ -1782,6 +1917,54 @@ export const App: React.FC = () => {
       }
     } catch (e: any) {
       alert(`Error opening project: ${e.message}`);
+    }
+  };
+
+  const handleOpenRecentProject = async (filePath: string) => {
+    const res = await ProjectManager.openProjectByPath(filePath);
+    if (res.success && res.project) {
+      await loadProjectState(res.project, filePath);
+    } else {
+      alert(`Could not open "${filePath}": ${res.error || 'File may have been moved or deleted.'}`);
+    }
+  };
+
+  const handleNewProject = () => {
+    suppressDirtyRef.current = true;
+    setTracks([]);
+    setSelectedTrackId('');
+    setSelectedFileId('');
+    setViewportCanvas(null);
+    setRawFrameCanvas(null);
+    setAtlasCanvas(null);
+    setAtlasFrames([]);
+    atlasLoaderRef.current.close();
+    spritesLoaderRef.current.close();
+    setProjectName('');
+    setCurrentProjectFilePath(null);
+    setHasUnsavedChanges(false);
+    setHiddenFrames([]);
+    retouchMasksRef.current.clear();
+    aiAlphaMasksRef.current.clear();
+    setAiMasksCount(0);
+    setShowHomeScreen(false);
+  };
+
+  const forceCloseApp = async () => {
+    allowCloseRef.current = true;
+    setIsCloseConfirmOpen(false);
+    if (isTauriEnvironment()) {
+      try {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        await getCurrentWindow().destroy();
+        return;
+      } catch {}
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('exit_app_cmd');
+      } catch {}
+    } else {
+      window.close();
     }
   };
 
@@ -2742,6 +2925,188 @@ export const App: React.FC = () => {
   const hasMedia = currentLoader.metadata.totalFrames > 0;
   const activeFilename = currentLoader.metadata.filename;
 
+  const effectiveBusyStatus = customBusyStatus
+    ? customBusyStatus
+    : isProcessingAiBg
+    ? {
+        title: 'AI Background Removal',
+        detail: aiBgProgress
+          ? `${aiBgProgress.stage} (${aiBgProgress.current}/${aiBgProgress.total})`
+          : 'Processing...',
+        progress: aiBgProgress
+          ? Math.round((aiBgProgress.current / Math.max(1, aiBgProgress.total)) * 100)
+          : undefined,
+      }
+    : isSlicing8Dir
+    ? {
+        title: 'Slicing 8 Directions...',
+        detail: 'Analyzing 3×3 directional character sectors',
+      }
+    : isAutoCropping
+    ? {
+        title: 'Tight Auto-Crop...',
+        detail: 'Computing union silhouette bounds across keyframes',
+      }
+    : isExporting
+    ? {
+        title: 'Exporting Sprite Assets...',
+        detail: 'Packing atlas, metadata & saving files to folder',
+      }
+    : isExportingGif
+    ? {
+        title: 'Encoding Animated GIF...',
+        detail: 'Synthesizing frames into animated GIF',
+      }
+    : null;
+
+  const closeConfirmModal = isCloseConfirmOpen ? (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 10000,
+        background: 'rgba(10, 11, 14, 0.82)',
+        backdropFilter: 'blur(6px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 20,
+      }}
+      onClick={() => setIsCloseConfirmOpen(false)}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: 440,
+          maxWidth: '94vw',
+          background: '#1B1C22',
+          border: '1px solid var(--border-medium)',
+          borderRadius: 12,
+          padding: 22,
+          boxShadow: '0 24px 64px rgba(0, 0, 0, 0.85)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 16,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+          <div
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: 8,
+              background: 'rgba(245, 158, 11, 0.14)',
+              border: '1px solid rgba(245, 158, 11, 0.4)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <AlertTriangle size={20} color="#F59E0B" />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#ffffff' }}>
+              Save project before closing?
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.45 }}>
+              You have unsaved changes in{' '}
+              <span style={{ color: '#FF551F', fontWeight: 600 }}>
+                {projectName || activeFilename || 'your current project'}
+              </span>
+              . Do you want to save a <code style={{ color: '#fff' }}>.sfproj</code> file before exiting?
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
+          <button
+            onClick={() => setIsCloseConfirmOpen(false)}
+            style={{
+              height: 34,
+              padding: '0 14px',
+              borderRadius: 6,
+              background: '#25272F',
+              border: '1px solid var(--border-subtle)',
+              color: 'var(--text-bright)',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            Cancel
+          </button>
+
+          <button
+            onClick={forceCloseApp}
+            style={{
+              height: 34,
+              padding: '0 14px',
+              borderRadius: 6,
+              background: 'rgba(239, 68, 68, 0.14)',
+              border: '1px solid rgba(239, 68, 68, 0.45)',
+              color: '#ef4444',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            Don&apos;t Save
+          </button>
+
+          <button
+            onClick={async () => {
+              const saved = await handleSaveProject();
+              if (saved) {
+                await forceCloseApp();
+              }
+            }}
+            style={{
+              height: 34,
+              padding: '0 16px',
+              borderRadius: 6,
+              background: '#FF551F',
+              border: 'none',
+              color: '#ffffff',
+              fontSize: 12,
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              cursor: 'pointer',
+              boxShadow: '0 4px 12px rgba(255, 85, 31, 0.35)',
+            }}
+          >
+            <Save size={13} />
+            <span>Save &amp; Exit</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
+  if (showHomeScreen) {
+    return (
+      <>
+        <HomeScreen
+          recentProjects={recentProjects}
+          onRemoveRecent={(fp) => setRecentProjects(ProjectManager.removeRecentProject(fp))}
+          onNewProject={handleNewProject}
+          onOpenProjectDialog={handleOpenProject}
+          onOpenRecentProject={handleOpenRecentProject}
+          onLoadMediaFiles={handleLoadFiles}
+          onOpenLibraryProject={loadProjectState}
+          hasActiveWorkspace={tracks.length > 0 || hasMedia}
+          activeWorkspaceName={projectName || activeFilename}
+          onResumeWorkspace={() => setShowHomeScreen(false)}
+          onOpenSupport={() => setIsSupportOpen(true)}
+        />
+        <SupportModal isOpen={isSupportOpen} onClose={() => setIsSupportOpen(false)} />
+        {closeConfirmModal}
+      </>
+    );
+  }
+
   return (
     <div style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* Top Header */}
@@ -2768,7 +3133,9 @@ export const App: React.FC = () => {
         onOpenProject={handleOpenProject}
         onSaveProject={handleSaveProject}
         onOpenLibrary={() => setIsLibraryOpen(true)}
+        onGoHome={() => setShowHomeScreen(true)}
         projectName={projectName}
+        hasUnsavedChanges={hasUnsavedChanges}
         isSavingProject={isSavingProject}
       />
 
@@ -2899,6 +3266,8 @@ export const App: React.FC = () => {
             onResetFrameRetouch={handleResetFrameRetouch}
             hasFrameRetouch={retouchMasksRef.current.has(getFrameCacheKey(selectedTrackId, currentFrame))}
             isCurrentFrameHidden={hiddenFrames.includes(currentFrame)}
+            busyStatus={effectiveBusyStatus}
+            isUpdatingPreview={isUpdatingPreviewState}
           />
 
           {/* Timeline */}
@@ -3104,6 +3473,9 @@ export const App: React.FC = () => {
           <span>{exportToast}</span>
         </div>
       )}
+
+      {/* Native Close Unsaved Changes Confirmation Modal */}
+      {closeConfirmModal}
     </div>
   );
 };

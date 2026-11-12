@@ -25,7 +25,9 @@ interface HeaderProps {
   onOpenProject?: () => void;
   onSaveProject?: () => void;
   onOpenLibrary?: () => void;
+  onGoHome?: () => void;
   projectName?: string;
+  hasUnsavedChanges?: boolean;
   isSavingProject?: boolean;
 }
 
@@ -42,7 +44,9 @@ const HeaderComponent: React.FC<HeaderProps> = ({
   onOpenProject,
   onSaveProject,
   onOpenLibrary,
+  onGoHome,
   projectName,
+  hasUnsavedChanges = false,
   isSavingProject = false,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -57,8 +61,32 @@ const HeaderComponent: React.FC<HeaderProps> = ({
     <header className="top-header">
       {/* Left: Brand Logo & Title */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        {/* New Official Brand Logo & Studio Pill */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        {/* New Official Brand Logo & Studio Pill (Click to return to Home Screen) */}
+        <button
+          onClick={onGoHome}
+          title="Home Screen & Recent Projects"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            background: 'transparent',
+            border: '1px solid transparent',
+            borderRadius: 6,
+            padding: '3px 6px',
+            cursor: onGoHome ? 'pointer' : 'default',
+            transition: 'all 0.15s ease',
+          }}
+          onMouseEnter={(e) => {
+            if (onGoHome) {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+              e.currentTarget.style.borderColor = 'var(--border-subtle)';
+            }
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'transparent';
+            e.currentTarget.style.borderColor = 'transparent';
+          }}
+        >
           <img
             src="/logo.png"
             alt="SpriteForge"
@@ -83,7 +111,7 @@ const HeaderComponent: React.FC<HeaderProps> = ({
           >
             STUDIO
           </span>
-        </div>
+        </button>
 
         {/* Undo / Redo Buttons */}
         <div
@@ -244,9 +272,10 @@ const HeaderComponent: React.FC<HeaderProps> = ({
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
             }}
-            title={`Active Project File: ${projectName}`}
+            title={`Active Project File: ${projectName}${hasUnsavedChanges ? ' (Unsaved changes)' : ''}`}
           >
             <span>{projectName}</span>
+            {hasUnsavedChanges && <span style={{ color: '#F59E0B', fontSize: 14, lineHeight: 0.5 }}>•</span>}
           </div>
         )}
       </div>

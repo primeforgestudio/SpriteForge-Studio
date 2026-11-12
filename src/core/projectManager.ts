@@ -18,6 +18,17 @@ export interface NativeProjectDialogResult {
   canceled: boolean;
 }
 
+export interface RecentProjectItem {
+  name: string;
+  filePath: string;
+  thumbnailUrl?: string;
+  framesCount: number;
+  fps: number;
+  savedAt: string;
+}
+
+const RECENT_PROJECTS_KEY = 'spriteforge_recent_projects_v1';
+
 export class ProjectManager {
   /**
    * Converts a File or Blob into a Base64 string for embedding into self-contained projects
@@ -286,5 +297,51 @@ export class ProjectManager {
       console.warn('[ProjectManager] Failed to parse dropped project content:', e);
     }
     return null;
+  }
+
+  public static async openProjectByPath(
+    filePath: string
+  ): Promise<{ success: boolean; project?: SpriteForgeProject; error?: string }> {
+    if (!isTauriEnvironment()) {
+      return { success: false, error: 'Direct file path opening is available in desktop mode.' };
+    }
+    try {
+      const content = await invoke<string>('read_project_by_path_cmd', { filePath });
+      const parsed = JSON.parse(content) as SpriteForgeProject;
+      if (parsed.format !== 'spriteforge-project' && !parsed.tracks) {
+        return { success: false, error: 'Invalid project file format' };
+      }
+      return { success: true, project: parsed };
+    } catch (err: any) {
+      return { success: false, error: typeof err === 'string' ? err : err?.message || 'File not found' };
+    }
+  }
+
+  public static getRecentProjects(): RecentProjectItem[] {
+    try {
+      const raw = localStorage.getItem(RECENT_PROJECTS_KEY);
+      if (!raw) return [];
+      const list = JSON.parse(raw) as RecentProjectItem[];
+      return Array.isArray(list) ? list : [];
+    } catch {
+      return [];
+    }
+  }
+
+  public static addRecentProject(item: RecentProjectItem): RecentProjectItem[] {
+    const existing = this.getRecentProjects().filter((r) => r.filePath !== item.filePath);
+    const updated = [item, ...existing].slice(0, 16);
+    try {
+      localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify(updated));
+    } catch {}
+    return updated;
+  }
+
+  public static removeRecentProject(filePath: string): RecentProjectItem[] {
+    const updated = this.getRecentProjects().filter((r) => r.filePath !== filePath);
+    try {
+      localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify(updated));
+    } catch {}
+    return updated;
   }
 }
