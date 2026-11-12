@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { Play, Pause, SkipBack, SkipForward, ChevronLeft, ChevronRight, RotateCw, Plus, Check } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, ChevronLeft, ChevronRight, RotateCw, Plus, Check, EyeOff, Eye } from 'lucide-react';
 
 interface TimelineProps {
   totalFrames: number;
@@ -11,6 +11,8 @@ interface TimelineProps {
   setCropEnd: (end: number) => void;
   markers: number[];
   setMarkers: (markers: number[]) => void;
+  hiddenFrames?: number[];
+  onToggleHideFrame?: (frame: number) => void;
   fps: number;
   setFps: (fps: number) => void;
   isPlaying: boolean;
@@ -62,6 +64,8 @@ const TimelineComponent: React.FC<TimelineProps> = ({
   setCropEnd,
   markers,
   setMarkers,
+  hiddenFrames = [],
+  onToggleHideFrame,
   fps,
   isPlaying,
   setIsPlaying,
@@ -158,6 +162,7 @@ const TimelineComponent: React.FC<TimelineProps> = ({
     cropStart,
     cropEnd,
     markers,
+    hiddenFrames,
     selectedKey,
     hoverKey,
     hoverHandle,
@@ -318,8 +323,13 @@ const TimelineComponent: React.FC<TimelineProps> = ({
           const x = xPos(frame, width);
           const isSelected = index === selectedKey;
           const isHovered = index === hoverKey;
+          const isHidden = hiddenFrames.includes(frame);
 
-          sCtx.strokeStyle = isSelected || isHovered ? 'rgba(255, 255, 255, 0.28)' : 'rgba(255, 255, 255, 0.1)';
+          sCtx.strokeStyle = isHidden
+            ? 'rgba(239, 68, 68, 0.35)'
+            : isSelected || isHovered
+            ? 'rgba(255, 255, 255, 0.28)'
+            : 'rgba(255, 255, 255, 0.1)';
           sCtx.lineWidth = 1;
           sCtx.beginPath();
           sCtx.moveTo(x + 0.5, trackTop + 2);
@@ -330,14 +340,14 @@ const TimelineComponent: React.FC<TimelineProps> = ({
             drawDiamond(x, laneCy, KEY_R + 3, 'rgba(242, 177, 52, 0.35)');
           }
 
-          let color = TL_KEY;
+          let color = isHidden ? '#6b2727' : TL_KEY;
           if (isSelected) {
-            color = TL_KEY_SELECTED;
+            color = isHidden ? '#ef4444' : TL_KEY_SELECTED;
           } else if (isHovered) {
             color = TL_KEY_HOVER;
           }
 
-          drawDiamond(x, laneCy, KEY_R, color, TL_KEY_EDGE);
+          drawDiamond(x, laneCy, KEY_R, color, isHidden ? '#ef4444' : TL_KEY_EDGE);
         });
 
         // Crop Boundary Handles (Start & End)
@@ -453,6 +463,7 @@ const TimelineComponent: React.FC<TimelineProps> = ({
     cropStart,
     cropEnd,
     markers,
+    hiddenFrames,
     selectedKey,
     hoverKey,
     hoverHandle,
@@ -957,6 +968,38 @@ const TimelineComponent: React.FC<TimelineProps> = ({
                     +Add Key
                   </>
                 )}
+              </button>
+            );
+          })()}
+
+          {/* Hide / Exclude Bad Frame Toggle */}
+          {onToggleHideFrame && (() => {
+            const isHidden = hiddenFrames.includes(currentFrame);
+            return (
+              <button
+                onClick={() => onToggleHideFrame(currentFrame)}
+                disabled={isPlaying}
+                style={{
+                  background: isHidden ? 'rgba(239, 68, 68, 0.18)' : 'var(--bg-card)',
+                  border: isHidden ? '1px solid #ef4444' : '1px solid var(--border-subtle)',
+                  borderRadius: 4,
+                  fontSize: 10,
+                  height: 24,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 4,
+                  padding: '0 8px',
+                  color: isHidden ? '#ef4444' : 'var(--text-muted)',
+                  cursor: isPlaying ? 'default' : 'pointer',
+                  opacity: isPlaying ? 0.5 : 1,
+                  userSelect: 'none',
+                  fontWeight: isHidden ? 700 : 500,
+                }}
+                title={isHidden ? 'Restore hidden frame to atlas' : 'Hide broken/mutated frame from atlas & export'}
+              >
+                {isHidden ? <Eye size={11} /> : <EyeOff size={11} />}
+                <span>{isHidden ? 'Restore Frame' : 'Hide Frame'}</span>
               </button>
             );
           })()}

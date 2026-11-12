@@ -199,6 +199,160 @@ fn read_media_file_bytes_cmd(file_path: String) -> Result<Vec<u8>, String> {
     std::fs::read(&file_path).map_err(|e| format!("Failed to read media {}: {}", file_path, e))
 }
 
+#[derive(serde::Serialize)]
+pub struct LibraryEntryMeta {
+    pub id: String,
+    pub character_name: String,
+    pub action_name: String,
+    pub file_path: String,
+    pub thumbnail_url: Option<String>,
+    pub frames_count: usize,
+    pub fps: f64,
+    pub updated_at: String,
+}
+
+fn get_library_root() -> std::path::PathBuf {
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .unwrap_or_else(|_| ".".to_string());
+    std::path::Path::new(&home)
+        .join(".spriteforge")
+        .join("library")
+}
+
+fn sanitize_seg(s: &str) -> String {
+    let cleaned: String = s
+        .trim()
+        .chars()
+        .map(|c| {
+            if ['<', '>', ':', '"', '/', '\\', '|', '?', '*'].contains(&c) {
+                '_'
+            } else {
+                c
+            }
+        })
+        .collect();
+    if cleaned.is_empty() {
+        "Unnamed".to_string()
+    } else {
+        cleaned
+    }
+}
+
+#[tauri::command]
+fn save_to_library_cmd(
+    character_name: String,
+    action_name: String,
+    content: String,
+) -> Result<String, String> {
+    let char_dir = get_library_root().join(sanitize_seg(&character_name));
+    std::fs::create_dir_all(&char_dir).map_err(|e| format!("Failed to create character folder: {}", e))?;
+    let file_name = format!("{}.sfproj", sanitize_seg(&action_name));
+    let full_path = char_dir.join(file_name);
+    std::fs::write(&full_path, content.as_bytes()).map_err(|e| format!("Failed to write library item: {}", e))?;
+    Ok(full_path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn list_library_cmd() -> Vec<LibraryEntryMeta> {
+    let root = get_library_root();
+    let mut entries = Vec::new();
+    let Ok(chars) = std::fs::read_dir(&root) else {
+        return entries;
+    };
+    for char_entry in chars.flatten() {
+        let char_path = char_entry.path();
+        if !char_path.is_dir() {
+            continue;
+        }
+        let char_name = char_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("Character")
+            .to_string();
+
+        let Ok(actions) = std::fs::read_dir(&char_path) else {
+            continue;
+        };
+        for act_entry in actions.flatten() {
+            let act_path = act_entry.path();
+            if act_path.extension().and_then(|e| e.to_str()) != Some("sfproj") {
+                continue;
+            }
+            let action_name = act_path
+                .file_stem()
+                .and_then(|n| n.to_str())
+                .unwrap_or("action")
+                .to_string();
+
+            let mut thumbnail_url = None;
+            let mut frames_count = 0usize;
+            let mut fps = 24.0;
+            let mut updated_at = String::new();
+
+            if let Ok(raw) = std::fs::read_to_string(&act_path) {
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&raw) {
+                    if let Some(saved) = val.get("savedAt").and_then(|v| v.as_str()) {
+                        updated_at = saved.to_string();
+                    }
+                    if let Some(atlas) = val.get("atlasSettings") {
+                        if let Some(f) = atlas.get("fps").and_then(|v| v.as_f64()) {
+                            fps = f;
+                        }
+                    }
+                    if let Some(tracks) = val.get("tracks").and_then(|v| v.as_array()) {
+                        if let Some(first) = tracks.first() {
+                            thumbnail_url = first
+                                .get("thumbnailUrl")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string());
+                            if let Some(markers) = first.get("markers").and_then(|v| v.as_array()) {
+                                frames_count = markers.len();
+                            } else if let Some(tot) = first.get("totalFrames").and_then(|v| v.as_u64()) {
+                                frames_count = tot as usize;
+                            }
+                        }
+                    }
+                }
+            }
+
+            entries.push(LibraryEntryMeta {
+                id: format!("{}/{}", char_name, action_name),
+                character_name: char_name.clone(),
+                action_name,
+                file_path: act_path.to_string_lossy().to_string(),
+                thumbnail_url,
+                frames_count,
+                fps,
+                updated_at,
+            });
+        }
+    }
+    entries.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    entries
+}
+
+#[tauri::command]
+fn load_library_file_cmd(file_path: String) -> Result<String, String> {
+    std::fs::read_to_string(&file_path).map_err(|e| format!("Failed to load library project: {}", e))
+}
+
+#[tauri::command]
+fn delete_library_file_cmd(file_path: String) -> Result<(), String> {
+    let p = std::path::Path::new(&file_path);
+    if p.exists() {
+        std::fs::remove_file(p).map_err(|e| format!("Failed to delete library file: {}", e))?;
+        if let Some(parent) = p.parent() {
+            if let Ok(mut rd) = std::fs::read_dir(parent) {
+                if rd.next().is_none() {
+                    let _ = std::fs::remove_dir(parent);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn pick_export_directory_cmd(default_path: Option<String>) -> Option<String> {
     let mut dialog = rfd::FileDialog::new().set_title("Select Destination Directory for Sprite Export");
@@ -293,7 +447,11 @@ pub fn run() {
             save_export_files_native_cmd,
             save_project_file_native_cmd,
             open_project_file_native_cmd,
-            read_media_file_bytes_cmd
+            read_media_file_bytes_cmd,
+            save_to_library_cmd,
+            list_library_cmd,
+            load_library_file_cmd,
+            delete_library_file_cmd
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

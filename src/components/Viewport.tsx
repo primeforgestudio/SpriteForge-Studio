@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { BackgroundMode, GarbageMatteSettings, CollisionSettings, MeshSettings, SpriteMesh } from '../core/types';
-import { Plus, Minus, RotateCcw, Maximize2, Pipette, Crosshair, Layers, Scissors, Shield, Columns, Sun, Lightbulb, Eye, ChevronDown, Check, Box, UploadCloud, X, Crop } from 'lucide-react';
+import { BackgroundMode, GarbageMatteSettings, CollisionSettings, MeshSettings, SpriteMesh, RetouchTool } from '../core/types';
+import { Plus, Minus, RotateCcw, Maximize2, Pipette, Crosshair, Layers, Scissors, Shield, Columns, Sun, Lightbulb, Eye, EyeOff, ChevronDown, Check, Box, UploadCloud, X, Crop, Wand2, Eraser, Paintbrush } from 'lucide-react';
 import { NormalMapGenerator } from '../core/normalMapGenerator';
 import { PbrGenerator } from '../core/pbrGenerator';
 import { MeshGenerator } from '../core/meshGenerator';
@@ -54,6 +54,20 @@ interface ViewportProps {
   isCropView?: boolean;
   setIsCropView?: (val: boolean) => void;
   onUpdateCropBox?: (cropBox: { x: number; y: number; width: number; height: number } | null) => void;
+  // Frame Retouch (Magic Wand, Eraser, Restore) & Hidden Frame
+  retouchTool?: RetouchTool;
+  setRetouchTool?: (tool: RetouchTool) => void;
+  retouchBrushSize?: number;
+  setRetouchBrushSize?: (size: number) => void;
+  wandTolerance?: number;
+  setWandTolerance?: (tol: number) => void;
+  wandContiguous?: boolean;
+  setWandContiguous?: (val: boolean) => void;
+  onMagicWandClick?: (x: number, y: number) => void;
+  onBrushStroke?: (x0: number, y0: number, x1: number, y1: number, mode: 'eraser' | 'restore') => void;
+  onResetFrameRetouch?: () => void;
+  hasFrameRetouch?: boolean;
+  isCurrentFrameHidden?: boolean;
 }
 
 const ViewportComponent: React.FC<ViewportProps> = ({
@@ -99,11 +113,26 @@ const ViewportComponent: React.FC<ViewportProps> = ({
   isCropView,
   setIsCropView,
   onUpdateCropBox,
+  retouchTool = 'none',
+  setRetouchTool,
+  retouchBrushSize = 18,
+  setRetouchBrushSize,
+  wandTolerance = 28,
+  setWandTolerance,
+  wandContiguous = true,
+  setWandContiguous,
+  onMagicWandClick,
+  onBrushStroke,
+  onResetFrameRetouch,
+  hasFrameRetouch = false,
+  isCurrentFrameHidden = false,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const displayCanvasRef = useRef<HTMLCanvasElement>(null);
   const canvasWrapperRef = useRef<HTMLDivElement>(null);
   const emptyFileInputRef = useRef<HTMLInputElement>(null);
+  const isPaintingRef = useRef<boolean>(false);
+  const lastBrushPosRef = useRef<{ x: number; y: number } | null>(null);
 
   const [internalCropView, setInternalCropView] = useState(false);
   const localCropView = isCropView !== undefined ? isCropView : internalCropView;
@@ -814,10 +843,44 @@ const ViewportComponent: React.FC<ViewportProps> = ({
     setZoom((prev) => Math.max(0.1, Math.min(10.0, prev * factor)));
   };
 
+  const getSourceCoords = (e: React.MouseEvent): { x: number; y: number } | null => {
+    const canvas = displayCanvasRef.current;
+    if (!canvas) return null;
+
+    const rect = canvas.getBoundingClientRect();
+    const cx = ((e.clientX - rect.left) / rect.width) * canvas.width;
+    const cy = ((e.clientY - rect.top) / rect.height) * canvas.height;
+
+    if (cx < 0 || cx >= canvas.width || cy < 0 || cy >= canvas.height) return null;
+
+    if (localCropView && cropBox && cropBox.width > 0 && cropBox.height > 0) {
+      return { x: Math.floor(cropBox.x + cx), y: Math.floor(cropBox.y + cy) };
+    }
+    return { x: Math.floor(cx), y: Math.floor(cy) };
+  };
+
   const handleMouseDown = (e: React.MouseEvent) => {
     if (isEyedropperActive) {
       pickColorAtEvent(e);
       setIsEyedropperActive(false);
+      return;
+    }
+
+    if (e.button === 0 && retouchTool === 'wand') {
+      const coords = getSourceCoords(e);
+      if (coords) {
+        onMagicWandClick?.(coords.x, coords.y);
+      }
+      return;
+    }
+
+    if (e.button === 0 && (retouchTool === 'eraser' || retouchTool === 'restore')) {
+      const coords = getSourceCoords(e);
+      if (coords) {
+        isPaintingRef.current = true;
+        lastBrushPosRef.current = coords;
+        onBrushStroke?.(coords.x, coords.y, coords.x, coords.y, retouchTool);
+      }
       return;
     }
 
@@ -828,6 +891,15 @@ const ViewportComponent: React.FC<ViewportProps> = ({
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
+    if (isPaintingRef.current && (retouchTool === 'eraser' || retouchTool === 'restore')) {
+      const coords = getSourceCoords(e);
+      if (coords && lastBrushPosRef.current) {
+        onBrushStroke?.(lastBrushPosRef.current.x, lastBrushPosRef.current.y, coords.x, coords.y, retouchTool);
+        lastBrushPosRef.current = coords;
+      }
+      return;
+    }
+
     if (isDragging) {
       setPan({
         x: e.clientX - dragStart.x,
@@ -843,6 +915,8 @@ const ViewportComponent: React.FC<ViewportProps> = ({
 
   const handleMouseUp = () => {
     setIsDragging(false);
+    isPaintingRef.current = false;
+    lastBrushPosRef.current = null;
   };
 
   const sampleColorAtEvent = (e: React.MouseEvent): [number, number, number] | null => {
@@ -917,7 +991,7 @@ const ViewportComponent: React.FC<ViewportProps> = ({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        cursor: isEyedropperActive ? 'crosshair' : isDragging ? 'grabbing' : 'grab',
+        cursor: isEyedropperActive || retouchTool !== 'none' ? 'crosshair' : isDragging ? 'grabbing' : 'grab',
       }}
     >
       {/* Top-Left Floating Zoom Controls (from screenshot) */}
@@ -1520,6 +1594,194 @@ const ViewportComponent: React.FC<ViewportProps> = ({
         )}
       </div>
 
+      {/* Hidden Frame Banner */}
+      {hasMedia && isCurrentFrameHidden && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 56,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 20,
+            background: 'rgba(180, 35, 35, 0.92)',
+            border: '1px solid #ef4444',
+            color: '#ffffff',
+            padding: '4px 12px',
+            borderRadius: 20,
+            fontSize: 11,
+            fontWeight: 700,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            boxShadow: '0 4px 14px rgba(0,0,0,0.5)',
+            pointerEvents: 'none',
+          }}
+        >
+          <EyeOff size={13} />
+          <span>Frame Hidden (Excluded from Atlas & Export)</span>
+        </div>
+      )}
+
+      {/* Bottom-Left Floating Per-Frame Retouch Toolbar */}
+      {hasMedia && setRetouchTool && (
+        <div
+          onMouseDown={(e) => e.stopPropagation()}
+          style={{
+            position: 'absolute',
+            bottom: 14,
+            left: 14,
+            zIndex: 25,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            background: 'rgba(23, 24, 28, 0.95)',
+            padding: '5px 8px',
+            borderRadius: 8,
+            border: retouchTool !== 'none' ? '1px solid #FF551F' : '1px solid var(--border-subtle)',
+            backdropFilter: 'blur(8px)',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.45)',
+          }}
+        >
+          <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', paddingRight: 2 }}>
+            Retouch:
+          </span>
+
+          {/* Magic Wand */}
+          <button
+            onClick={() => setRetouchTool(retouchTool === 'wand' ? 'none' : 'wand')}
+            style={{
+              background: retouchTool === 'wand' ? '#FF551F' : 'var(--bg-input)',
+              color: retouchTool === 'wand' ? '#ffffff' : 'var(--text-bright)',
+              border: retouchTool === 'wand' ? '1px solid #FF551F' : '1px solid var(--border-subtle)',
+              padding: '4px 8px',
+              borderRadius: 5,
+              fontSize: 11,
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+            }}
+            title="Magic Wand: click residual background pocket to erase"
+          >
+            <Wand2 size={12} />
+            <span>Wand</span>
+          </button>
+
+          {/* Eraser Brush */}
+          <button
+            onClick={() => setRetouchTool(retouchTool === 'eraser' ? 'none' : 'eraser')}
+            style={{
+              background: retouchTool === 'eraser' ? '#FF551F' : 'var(--bg-input)',
+              color: retouchTool === 'eraser' ? '#ffffff' : 'var(--text-bright)',
+              border: retouchTool === 'eraser' ? '1px solid #FF551F' : '1px solid var(--border-subtle)',
+              padding: '4px 8px',
+              borderRadius: 5,
+              fontSize: 11,
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+            }}
+            title="Eraser Brush: paint transparency on current frame"
+          >
+            <Eraser size={12} />
+            <span>Eraser</span>
+          </button>
+
+          {/* Restore Brush */}
+          <button
+            onClick={() => setRetouchTool(retouchTool === 'restore' ? 'none' : 'restore')}
+            style={{
+              background: retouchTool === 'restore' ? '#10B981' : 'var(--bg-input)',
+              color: retouchTool === 'restore' ? '#ffffff' : 'var(--text-bright)',
+              border: retouchTool === 'restore' ? '1px solid #10B981' : '1px solid var(--border-subtle)',
+              padding: '4px 8px',
+              borderRadius: 5,
+              fontSize: 11,
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+            }}
+            title="Restore Brush: paint original video pixels back"
+          >
+            <Paintbrush size={12} />
+            <span>Restore</span>
+          </button>
+
+          {/* Wand Tolerance */}
+          {retouchTool === 'wand' && setWandTolerance && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 6, borderLeft: '1px solid var(--border-subtle)' }}>
+              <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Tol: {wandTolerance}</span>
+              <input
+                type="range"
+                min={5}
+                max={80}
+                value={wandTolerance}
+                onChange={(e) => setWandTolerance(Number(e.target.value))}
+                style={{ width: 65 }}
+              />
+              {setWandContiguous && (
+                <button
+                  onClick={() => setWandContiguous(!wandContiguous)}
+                  style={{
+                    background: wandContiguous ? '#2B2D37' : 'transparent',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: 4,
+                    color: wandContiguous ? '#FF551F' : 'var(--text-muted)',
+                    fontSize: 9,
+                    padding: '2px 5px',
+                    cursor: 'pointer',
+                  }}
+                  title="Toggle Contiguous flood-fill vs Global color erase"
+                >
+                  {wandContiguous ? 'Contiguous' : 'Global'}
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Brush Size */}
+          {(retouchTool === 'eraser' || retouchTool === 'restore') && setRetouchBrushSize && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 6, borderLeft: '1px solid var(--border-subtle)' }}>
+              <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Size: {retouchBrushSize}px</span>
+              <input
+                type="range"
+                min={3}
+                max={80}
+                value={retouchBrushSize}
+                onChange={(e) => setRetouchBrushSize(Number(e.target.value))}
+                style={{ width: 70 }}
+              />
+            </div>
+          )}
+
+          {/* Reset Frame Edits */}
+          {hasFrameRetouch && onResetFrameRetouch && (
+            <button
+              onClick={onResetFrameRetouch}
+              style={{
+                background: 'rgba(239, 68, 68, 0.14)',
+                border: '1px solid rgba(239, 68, 68, 0.4)',
+                color: '#ef4444',
+                padding: '3px 7px',
+                borderRadius: 5,
+                fontSize: 10,
+                fontWeight: 600,
+                cursor: 'pointer',
+                marginLeft: 2,
+              }}
+              title="Reset manual retouch edits on this frame"
+            >
+              Reset Frame
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Eyedropper Hover Tooltip */}
       {isEyedropperActive && hoverColor && (
         <div
@@ -1652,6 +1914,7 @@ const ViewportComponent: React.FC<ViewportProps> = ({
                 cursor: cropDragMode === 'move' ? 'grabbing' : 'grab',
                 zIndex: 25,
                 userSelect: 'none',
+                pointerEvents: retouchTool !== 'none' || isEyedropperActive ? 'none' : 'auto',
               }}
               title="Click and drag to move crop box over subject"
             >

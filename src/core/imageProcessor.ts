@@ -1,4 +1,4 @@
-import { ChromaKeySettings, GarbageMatteSettings } from './types';
+import { ChromaKeySettings, GarbageMatteSettings, OutlineSettings } from './types';
 
 export class ImageProcessor {
   /**
@@ -1126,5 +1126,102 @@ export class ImageProcessor {
     outCtx.drawImage(ghost, 0, 0);
 
     return out;
+  }
+
+  /**
+   * Draws an Outer, Inner, or Both stroke outline around opaque sprite silhouettes.
+   */
+  public static applyOutline(
+    targetCanvas: HTMLCanvasElement,
+    settings: OutlineSettings
+  ): void {
+    if (!settings.enabled || settings.thickness <= 0) return;
+
+    const w = targetCanvas.width;
+    const h = targetCanvas.height;
+    const ctx = targetCanvas.getContext('2d');
+    if (!ctx || w === 0 || h === 0) return;
+
+    const hex = settings.color.replace('#', '');
+    const cr = parseInt(hex.substring(0, 2), 16) || 0;
+    const cg = parseInt(hex.substring(2, 4), 16) || 0;
+    const cb = parseInt(hex.substring(4, 6), 16) || 0;
+    const opacity = Math.max(0.05, Math.min(1.0, (settings.opacity ?? 100) / 100));
+
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const src = imgData.data;
+    const out = new Uint8ClampedArray(src);
+
+    const r = Math.max(1, Math.min(8, Math.round(settings.thickness)));
+    const rSq = r * r + 0.5;
+    const alphaThreshold = 90;
+
+    // Precompute circular kernel offsets
+    const offsets: number[] = [];
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        if (dx * dx + dy * dy <= rSq) {
+          offsets.push(dx, dy);
+        }
+      }
+    }
+
+    const doOuter = settings.mode === 'outer' || settings.mode === 'both';
+    const doInner = settings.mode === 'inner' || settings.mode === 'both';
+
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const idx = (y * w + x) * 4;
+        const a = src[idx + 3];
+
+        if (doOuter && a <= alphaThreshold) {
+          // Check if any neighbor within radius is opaque
+          let maxNeighborAlpha = 0;
+          for (let k = 0; k < offsets.length; k += 2) {
+            const nx = x + offsets[k];
+            const ny = y + offsets[k + 1];
+            if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+              const na = src[(ny * w + nx) * 4 + 3];
+              if (na > alphaThreshold) {
+                if (na > maxNeighborAlpha) maxNeighborAlpha = na;
+                if (maxNeighborAlpha > 240) break;
+              }
+            }
+          }
+          if (maxNeighborAlpha > alphaThreshold) {
+            const strokeA = Math.round(255 * opacity * (maxNeighborAlpha / 255));
+            if (strokeA > out[idx + 3]) {
+              out[idx] = cr;
+              out[idx + 1] = cg;
+              out[idx + 2] = cb;
+              out[idx + 3] = strokeA;
+            }
+          }
+        } else if (doInner && a > alphaThreshold) {
+          // Check if any neighbor within radius is transparent or canvas edge
+          let touchesTransparent = x < r || x >= w - r || y < r || y >= h - r;
+          if (!touchesTransparent) {
+            for (let k = 0; k < offsets.length; k += 2) {
+              const nx = x + offsets[k];
+              const ny = y + offsets[k + 1];
+              if (nx < 0 || nx >= w || ny < 0 || ny >= h || src[(ny * w + nx) * 4 + 3] <= alphaThreshold) {
+                touchesTransparent = true;
+                break;
+              }
+            }
+          }
+          if (touchesTransparent) {
+            // Blend stroke color on top of inner edge pixel
+            out[idx] = Math.round(src[idx] * (1 - opacity) + cr * opacity);
+            out[idx + 1] = Math.round(src[idx + 1] * (1 - opacity) + cg * opacity);
+            out[idx + 2] = Math.round(src[idx + 2] * (1 - opacity) + cb * opacity);
+          }
+        }
+      }
+    }
+
+    imgData.data.set(out);
+    ctx.putImageData(imgData, 0, 0);
   }
 }

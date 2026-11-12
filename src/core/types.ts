@@ -2,8 +2,32 @@ export type AppMode = 'atlas' | 'sprites';
 
 export type BackgroundMode = 'checkerboard' | 'solid';
 
+export type BackgroundRemovalMode = 'chromakey' | 'ai_neural' | 'smart_flood';
+export type RetouchTool = 'none' | 'wand' | 'eraser' | 'restore';
+
+export interface OutlineSettings {
+  enabled: boolean;
+  mode: 'outer' | 'inner' | 'both';
+  thickness: number; // 1..8 px
+  color: string; // hex e.g. '#000000'
+  opacity: number; // 10..100
+}
+
+export interface CharacterLibraryEntry {
+  id: string;
+  characterName: string; // Role / Character (e.g. "Cyber_Ninja")
+  actionName: string;    // Action (e.g. "idle", "walk", "attack")
+  filePath: string;
+  thumbnailUrl?: string;
+  framesCount: number;
+  fps: number;
+  updatedAt: string;
+}
+
 export interface ChromaKeySettings {
   enabled: boolean;
+  removalMode?: BackgroundRemovalMode;
+  smartFloodTolerance?: number; // 5..80, default 28
   algorithm: 'keylight' | 'classic';
   keyColor: [number, number, number]; // [R, G, B] in 0..255
   gain: number; // 0..100 (Screen Gain / Tolerance)
@@ -103,6 +127,8 @@ export interface AtlasSettings {
   loopBlendFrames?: number; // 1..8 (default 3)
   // 👾 Retro Pixel-Art Quantizer
   pixelArtSettings?: PixelArtSettings;
+  // ✏️ Sprite Outline / Stroke Generator
+  outlineSettings?: OutlineSettings;
 }
 
 export interface PixelArtSettings {
@@ -221,6 +247,7 @@ export type ExportScope = 'single' | 'master';
 export interface AnimationTrack {
   id: string;
   name: string; // Animation identifier (e.g. "idle", "run", "attack")
+  characterName?: string; // Role / Character group name (e.g. "Orc_Warrior")
   fileName: string;
   filePath?: string;
   fileRef?: File;
@@ -230,6 +257,7 @@ export interface AnimationTrack {
   cropStart: number;
   cropEnd: number;
   markers: number[];
+  hiddenFrames?: number[]; // Excluded/bad frames skipped in atlas & playback
   fps: number;
   loop: boolean;
   enabled: boolean;
@@ -241,6 +269,7 @@ export interface SpriteForgeProject {
   format: 'spriteforge-project';
   version: '1.0.0';
   name: string;
+  characterName?: string;
   savedAt: string;
   appMode: AppMode;
   exportScope: ExportScope;
@@ -251,6 +280,7 @@ export interface SpriteForgeProject {
   tracks: Array<{
     id: string;
     name: string;
+    characterName?: string;
     fileName: string;
     filePath?: string;
     mediaBase64?: string;
@@ -259,6 +289,7 @@ export interface SpriteForgeProject {
     cropStart: number;
     cropEnd: number;
     markers: number[];
+    hiddenFrames?: number[];
     fps: number;
     loop: boolean;
     enabled: boolean;

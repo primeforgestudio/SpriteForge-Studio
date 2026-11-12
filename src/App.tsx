@@ -29,7 +29,10 @@ import { WebGLKeyer } from './core/webglKeyer';
 import { globalHistory } from './core/history';
 import { FolderCheck } from 'lucide-react';
 import { ProjectManager } from './core/projectManager';
-import { SpriteForgeProject } from './core/types';
+import { ProjectLibraryManager } from './core/projectLibrary';
+import { AiBackgroundRemover } from './core/aiBackgroundRemover';
+import { FrameRetouchEngine } from './core/frameRetouch';
+import { SpriteForgeProject, RetouchTool } from './core/types';
 import { Header } from './components/Header';
 import { LeftSidebar, LoadedFileItem } from './components/LeftSidebar';
 import { Viewport } from './components/Viewport';
@@ -39,6 +42,7 @@ import { SpritesPanel } from './components/SpritesPanel';
 import { AtlasPreview } from './components/AtlasPreview';
 import { SettingsModal } from './components/SettingsModal';
 import { SupportModal } from './components/SupportModal';
+import { ProjectLibraryModal } from './components/ProjectLibraryModal';
 
 export const App: React.FC = () => {
   // App Mode & Settings
@@ -56,13 +60,34 @@ export const App: React.FC = () => {
   const [selectedTrackId, setSelectedTrackId] = useState<string>('');
   const [exportScope, setExportScope] = useState<ExportScope>('single');
 
-  // Project Save / Open State (.sfproj)
+  // Project Save / Open State (.sfproj) & Character Library
   const [projectName, setProjectName] = useState<string>('');
   const [currentProjectFilePath, setCurrentProjectFilePath] = useState<string | null>(null);
   const [isSavingProject, setIsSavingProject] = useState<boolean>(false);
+  const [isLibraryOpen, setIsLibraryOpen] = useState<boolean>(false);
   const handleSaveProjectRef = useRef<() => void>(() => {});
   const handleOpenProjectRef = useRef<() => void>(() => {});
   const loadProjectStateRef = useRef<((project: SpriteForgeProject, filePath?: string) => Promise<void>) | null>(null);
+
+  // AI Non-Chroma Background Removal State (cached per trackId:frameIdx)
+  const aiAlphaMasksRef = useRef<Map<string, Uint8ClampedArray>>(new Map());
+  const [isProcessingAiBg, setIsProcessingAiBg] = useState<boolean>(false);
+  const [aiBgProgress, setAiBgProgress] = useState<{ current: number; total: number; stage: string } | null>(null);
+  const [aiMasksCount, setAiMasksCount] = useState<number>(0);
+
+  // Per-Frame Manual Retouch State (Magic Wand / Eraser / Restore / Hidden Frames)
+  const retouchMasksRef = useRef<Map<string, Uint8Array>>(new Map());
+  const [retouchTool, setRetouchTool] = useState<RetouchTool>('none');
+  const [retouchBrushSize, setRetouchBrushSize] = useState<number>(18);
+  const [wandTolerance, setWandTolerance] = useState<number>(28);
+  const [wandContiguous, setWandContiguous] = useState<boolean>(true);
+  const [retouchVersion, setRetouchVersion] = useState<number>(0);
+  const [hiddenFrames, setHiddenFrames] = useState<number[]>([]);
+
+  const getFrameCacheKey = useCallback(
+    (trackId: string, frameIdx: number) => `${trackId || 'default'}:${frameIdx}`,
+    []
+  );
 
   // Loaded Media Files list (Left Sidebar)
   const [loadedFiles, setLoadedFiles] = useState<LoadedFileItem[]>([]);
@@ -615,11 +640,44 @@ export const App: React.FC = () => {
       setRawFrameCanvas(rawFrameCanvasRef.current);
     }
 
-    // Fast-path: When chroma key and masks are not active, skip all array allocation and processing!
-    if (!keyingSettings.enabled && !showMask && !keyingSettings.garbageMatte?.enabled) {
-      ctx.putImageData(rawData, 0, 0);
+    const removalMode = keyingSettings.removalMode || 'chromakey';
+    const frameKey = getFrameCacheKey(selectedTrackId, targetFrame);
+    const cachedAiMask = aiAlphaMasksRef.current.get(frameKey);
+    const retouchMask = retouchMasksRef.current.get(frameKey);
+    const outlineCfg = atlasSettings.outlineSettings;
+
+    // Helper: Apply per-frame retouch + live outline post-pass
+    const applyPostPasses = () => {
+      if (retouchMask) {
+        FrameRetouchEngine.applyRetouchMaskToCanvas(canvas, retouchMask, rawData);
+      }
+      if (outlineCfg?.enabled && !showMask) {
+        ImageProcessor.applyOutline(canvas, outlineCfg);
+      }
       setViewportCanvas(canvas);
       setRenderTrigger((v) => (v + 1) % 1000000);
+    };
+
+    // Path A: AI Neural or Smart Flood (Non-Chroma Background Removal)
+    if (removalMode === 'ai_neural' || removalMode === 'smart_flood') {
+      ctx.putImageData(rawData, 0, 0);
+      if (cachedAiMask) {
+        AiBackgroundRemover.applyAlphaMaskToCanvas(canvas, cachedAiMask);
+      } else if (removalMode === 'smart_flood') {
+        const floodMask = AiBackgroundRemover.extractSmartFloodAlphaMask(
+          rawData,
+          keyingSettings.smartFloodTolerance ?? 28
+        );
+        AiBackgroundRemover.applyAlphaMaskToCanvas(canvas, floodMask);
+      }
+      applyPostPasses();
+      return;
+    }
+
+    // Fast-path: When chroma key and masks are not active
+    if (!keyingSettings.enabled && !showMask && !keyingSettings.garbageMatte?.enabled) {
+      ctx.putImageData(rawData, 0, 0);
+      applyPostPasses();
       return;
     }
 
@@ -628,8 +686,7 @@ export const App: React.FC = () => {
     const cachedKeyed = loader.getKeyedFrame(targetFrame, keyHash);
     if (cachedKeyed) {
       ctx.putImageData(cachedKeyed, 0, 0);
-      setViewportCanvas(canvas);
-      setRenderTrigger((v) => (v + 1) % 1000000);
+      applyPostPasses();
       return;
     }
 
@@ -651,8 +708,7 @@ export const App: React.FC = () => {
       if (ok) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(webglKeyerRef.current.getCanvas(), 0, 0);
-        setViewportCanvas(canvas);
-        setRenderTrigger((v) => (v + 1) % 1000000);
+        applyPostPasses();
         return;
       }
     }
@@ -670,9 +726,8 @@ export const App: React.FC = () => {
     loader.setKeyedFrame(targetFrame, keyHash, processedData);
     ctx.putImageData(processedData, 0, 0);
 
-    setViewportCanvas(canvas);
-    setRenderTrigger((v) => (v + 1) % 1000000);
-  }, [mode, keyingSettings, showMask]);
+    applyPostPasses();
+  }, [mode, keyingSettings, showMask, selectedTrackId, atlasSettings.outlineSettings, retouchVersion, getFrameCacheKey]);
 
   // When paused or scrubbing, update viewport frame
   useEffect(() => {
@@ -1076,9 +1131,56 @@ export const App: React.FC = () => {
     };
   }, [mode, currentFrame, markers, keyingSettings, atlasSettings.enableOnionSkin, atlasSettings.onionOpacity]);
 
-  // High-fidelity Keyer producing clean, full-resolution transparent canvas matching Viewport
+  // High-fidelity Keyer / AI Matter producing clean, full-resolution transparent canvas matching Viewport
   const getKeyedFrameCanvas = useCallback(
-    (raw: ImageData): HTMLCanvasElement => {
+    (raw: ImageData, frameIdx?: number, trackIdOverride?: string): HTMLCanvasElement => {
+      const targetTrackId = trackIdOverride ?? selectedTrackId;
+      const removalMode = keyingSettings.removalMode || 'chromakey';
+
+      const applyRetouchIfPresent = (outCanvas: HTMLCanvasElement) => {
+        if (frameIdx !== undefined) {
+          const rMask = retouchMasksRef.current.get(getFrameCacheKey(targetTrackId, frameIdx));
+          if (rMask) {
+            FrameRetouchEngine.applyRetouchMaskToCanvas(outCanvas, rMask, raw);
+          }
+        }
+        return outCanvas;
+      };
+
+      // 1. AI Neural / Smart Flood Non-Chroma Path
+      if (removalMode === 'ai_neural' || removalMode === 'smart_flood') {
+        const outCanvas = document.createElement('canvas');
+        outCanvas.width = raw.width;
+        outCanvas.height = raw.height;
+        const ctx = outCanvas.getContext('2d');
+        if (ctx) {
+          ctx.putImageData(raw, 0, 0);
+          const aiMask =
+            frameIdx !== undefined
+              ? aiAlphaMasksRef.current.get(getFrameCacheKey(targetTrackId, frameIdx))
+              : undefined;
+          if (aiMask) {
+            AiBackgroundRemover.applyAlphaMaskToCanvas(outCanvas, aiMask);
+          } else if (removalMode === 'smart_flood') {
+            const floodMask = AiBackgroundRemover.extractSmartFloodAlphaMask(
+              raw,
+              keyingSettings.smartFloodTolerance ?? 28
+            );
+            AiBackgroundRemover.applyAlphaMaskToCanvas(outCanvas, floodMask);
+          }
+        }
+        return applyRetouchIfPresent(outCanvas);
+      }
+
+      // 2. WebGL KeyForge Chroma Key Path
+      if (!keyingSettings.enabled && !keyingSettings.garbageMatte?.enabled) {
+        const outCanvas = document.createElement('canvas');
+        outCanvas.width = raw.width;
+        outCanvas.height = raw.height;
+        outCanvas.getContext('2d')?.putImageData(raw, 0, 0);
+        return applyRetouchIfPresent(outCanvas);
+      }
+
       try {
         if (!webglCanvasRef.current) {
           webglCanvasRef.current = document.createElement('canvas');
@@ -1101,7 +1203,7 @@ export const App: React.FC = () => {
             const ctx = outCanvas.getContext('2d');
             if (ctx) {
               ctx.drawImage(webglKeyerRef.current.getCanvas(), 0, 0);
-              return outCanvas;
+              return applyRetouchIfPresent(outCanvas);
             }
           }
         }
@@ -1119,9 +1221,9 @@ export const App: React.FC = () => {
         ImageProcessor.applyChromaKey(copy, keyingSettings);
         ctx.putImageData(copy, 0, 0);
       }
-      return outCanvas;
+      return applyRetouchIfPresent(outCanvas);
     },
-    [keyingSettings]
+    [keyingSettings, selectedTrackId, getFrameCacheKey]
   );
 
   // Update Atlas Preview (Fast & High Quality matching Viewport)
@@ -1129,15 +1231,14 @@ export const App: React.FC = () => {
   const updateAtlasPreview = useCallback(async () => {
     if (mode !== 'atlas' || isUpdatingAtlasRef.current || atlasLoaderRef.current.isVideoPlaying()) return;
     const loader = atlasLoaderRef.current;
-    if (loader.metadata.totalFrames <= 0 || markers.length === 0) return;
+    const activeMarkers = markers.filter((f) => !hiddenFrames.includes(f));
+    if (loader.metadata.totalFrames <= 0 || activeMarkers.length === 0) return;
 
     isUpdatingAtlasRef.current = true;
 
     try {
       const fw = atlasSettings.frameWidth;
       const fh = atlasSettings.frameHeight;
-      const cols = atlasSettings.columns;
-      const rows = atlasSettings.rows;
 
       // High-resolution preview matching configured frame dimensions
       const maxDim = Math.max(fw, fh);
@@ -1148,12 +1249,12 @@ export const App: React.FC = () => {
 
       const frameCanvases: HTMLCanvasElement[] = [];
 
-      for (const frameIdx of markers) {
+      for (const frameIdx of activeMarkers) {
         if (loader.isVideoPlaying()) return;
         const raw = await loader.getFrame(frameIdx);
         if (raw) {
-          // 1. Key at full resolution using the exact same WebGL GPU keyer as Viewport
-          const keyedCanvas = getKeyedFrameCanvas(raw);
+          // 1. Key / AI Matte / Retouch at full resolution
+          const keyedCanvas = getKeyedFrameCanvas(raw, frameIdx);
 
           // 2. Uniform aspect-fit resize with bounding cropBox if active
           const smallCanvas = ImageProcessor.resizeCanvas(
@@ -1164,7 +1265,12 @@ export const App: React.FC = () => {
             atlasSettings.cropBox
           );
 
-          // 3. Apply Contact Drop-Shadow if enabled
+          // 3. Apply Sprite Outline (Stroke) if enabled
+          if (atlasSettings.outlineSettings?.enabled) {
+            ImageProcessor.applyOutline(smallCanvas, atlasSettings.outlineSettings);
+          }
+
+          // 4. Apply Contact Drop-Shadow if enabled
           if (atlasSettings.enableShadow) {
             ImageProcessor.applyDropShadow(
               smallCanvas,
@@ -1259,7 +1365,7 @@ export const App: React.FC = () => {
     } finally {
       isUpdatingAtlasRef.current = false;
     }
-  }, [mode, markers, atlasSettings, keyingSettings, getKeyedFrameCanvas]);
+  }, [mode, markers, hiddenFrames, retouchVersion, atlasSettings, keyingSettings, getKeyedFrameCanvas]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -1450,7 +1556,7 @@ export const App: React.FC = () => {
       setTracks((prev) =>
         prev.map((t) =>
           t.id === selectedTrackId
-            ? { ...t, cropStart, cropEnd, markers, fps: atlasSettings.fps, cropBox: atlasSettings.cropBox }
+            ? { ...t, cropStart, cropEnd, markers, hiddenFrames, fps: atlasSettings.fps, cropBox: atlasSettings.cropBox }
             : t
         )
       );
@@ -1460,6 +1566,7 @@ export const App: React.FC = () => {
     if (!target || !target.fileRef) return;
     setSelectedTrackId(id);
     setSelectedFileId(id);
+    setHiddenFrames(target.hiddenFrames || []);
     const baseName = target.name || target.fileName.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_') || 'character_atlas';
     setExportFilename(baseName);
 
@@ -1596,6 +1703,7 @@ export const App: React.FC = () => {
           setCropStart(targetTrack.cropStart || 0);
           setCropEnd(targetTrack.cropEnd || (targetTrack.totalFrames ? targetTrack.totalFrames - 1 : 0));
           setMarkers(targetTrack.markers || [0]);
+          setHiddenFrames(targetTrack.hiddenFrames || []);
           setCurrentFrame(project.currentFrame || targetTrack.cropStart || 0);
 
           if (targetTrack.fileRef) {
@@ -1681,6 +1789,222 @@ export const App: React.FC = () => {
   handleSaveProjectRef.current = handleSaveProject;
   handleOpenProjectRef.current = handleOpenProject;
 
+  // ==========================================
+  // AI NON-CHROMA BACKGROUND REMOVAL
+  // ==========================================
+  const handleRunAiMatte = async (scope: 'current' | 'all') => {
+    const loader = atlasLoaderRef.current;
+    if (loader.metadata.totalFrames <= 0 || isProcessingAiBg) return;
+
+    const targetFrames = scope === 'current' ? [currentFrame] : markers;
+    if (targetFrames.length === 0) return;
+
+    const removalMode = keyingSettings.removalMode || 'ai_neural';
+    setIsProcessingAiBg(true);
+    setAiBgProgress({ current: 0, total: targetFrames.length, stage: 'Preparing...' });
+
+    try {
+      for (let i = 0; i < targetFrames.length; i++) {
+        const fIdx = targetFrames[i];
+        const raw = await loader.getFrame(fIdx);
+        if (!raw) continue;
+
+        let alphaMask: Uint8ClampedArray;
+        if (removalMode === 'ai_neural') {
+          setAiBgProgress({
+            current: i + 1,
+            total: targetFrames.length,
+            stage: `AI Matting Frame ${i + 1}/${targetFrames.length}`,
+          });
+          alphaMask = await AiBackgroundRemover.extractNeuralAlphaMask(raw, (pct, stage) => {
+            setAiBgProgress({
+              current: i + 1,
+              total: targetFrames.length,
+              stage: `${stage} (${pct}%)`,
+            });
+          });
+        } else {
+          setAiBgProgress({
+            current: i + 1,
+            total: targetFrames.length,
+            stage: `Smart Flood Frame ${i + 1}/${targetFrames.length}`,
+          });
+          alphaMask = AiBackgroundRemover.extractSmartFloodAlphaMask(
+            raw,
+            keyingSettings.smartFloodTolerance ?? 28
+          );
+        }
+
+        aiAlphaMasksRef.current.set(getFrameCacheKey(selectedTrackId, fIdx), alphaMask);
+        setAiMasksCount(aiAlphaMasksRef.current.size);
+        await new Promise((r) => setTimeout(r, 0));
+      }
+
+      await renderAtlasFrame(currentFrame, false);
+      setRetouchVersion((v) => v + 1);
+      setExportToast(`✓ Background removed for ${targetFrames.length} frame(s)`);
+      setTimeout(() => setExportToast(null), 4000);
+    } catch (e: any) {
+      alert(`AI Background Removal failed: ${e.message}`);
+    } finally {
+      setIsProcessingAiBg(false);
+      setAiBgProgress(null);
+    }
+  };
+
+  const handleClearAiMasks = () => {
+    const prefix = `${selectedTrackId || 'default'}:`;
+    for (const k of Array.from(aiAlphaMasksRef.current.keys())) {
+      if (k.startsWith(prefix)) {
+        aiAlphaMasksRef.current.delete(k);
+      }
+    }
+    setAiMasksCount(aiAlphaMasksRef.current.size);
+    setRetouchVersion((v) => v + 1);
+    renderAtlasFrame(currentFrame, false);
+  };
+
+  // ==========================================
+  // PER-FRAME RETOUCH (MAGIC WAND, BRUSH, HIDE)
+  // ==========================================
+  const handleMagicWandClick = async (x: number, y: number) => {
+    const canvas = viewportCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const key = getFrameCacheKey(selectedTrackId, currentFrame);
+    let rMask = retouchMasksRef.current.get(key);
+    if (!rMask || rMask.length !== canvas.width * canvas.height) {
+      rMask = FrameRetouchEngine.createNeutralMask(canvas.width, canvas.height);
+      retouchMasksRef.current.set(key, rMask);
+    }
+
+    const erased = FrameRetouchEngine.applyMagicWandErase(
+      imgData,
+      rMask,
+      x,
+      y,
+      wandTolerance,
+      wandContiguous
+    );
+
+    if (erased > 0) {
+      setRetouchVersion((v) => v + 1);
+      await renderAtlasFrame(currentFrame, false);
+    }
+  };
+
+  const handleBrushStroke = async (
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number,
+    brushMode: 'eraser' | 'restore'
+  ) => {
+    const canvas = viewportCanvasRef.current;
+    if (!canvas) return;
+    const key = getFrameCacheKey(selectedTrackId, currentFrame);
+    let rMask = retouchMasksRef.current.get(key);
+    if (!rMask || rMask.length !== canvas.width * canvas.height) {
+      rMask = FrameRetouchEngine.createNeutralMask(canvas.width, canvas.height);
+      retouchMasksRef.current.set(key, rMask);
+    }
+
+    FrameRetouchEngine.paintBrushStroke(
+      rMask,
+      canvas.width,
+      canvas.height,
+      x0,
+      y0,
+      x1,
+      y1,
+      retouchBrushSize,
+      brushMode
+    );
+    setRetouchVersion((v) => v + 1);
+    await renderAtlasFrame(currentFrame, true);
+  };
+
+  const handleResetFrameRetouch = async () => {
+    const key = getFrameCacheKey(selectedTrackId, currentFrame);
+    retouchMasksRef.current.delete(key);
+    setRetouchVersion((v) => v + 1);
+    await renderAtlasFrame(currentFrame, false);
+  };
+
+  const handleToggleHideFrame = (frame: number) => {
+    setHiddenFrames((prev) => {
+      const next = prev.includes(frame) ? prev.filter((f) => f !== frame) : [...prev, frame];
+      if (selectedTrackId) {
+        setTracks((tPrev) =>
+          tPrev.map((t) => (t.id === selectedTrackId ? { ...t, hiddenFrames: next } : t))
+        );
+      }
+      return next;
+    });
+  };
+
+  // ==========================================
+  // CHARACTER → ACTIONS LIBRARY HANDLERS
+  // ==========================================
+  const handleSaveCurrentToLibrary = async (characterName: string, actionName: string) => {
+    const updatedTracks = tracks.map((t) =>
+      t.id === selectedTrackId
+        ? {
+            ...t,
+            characterName,
+            cropStart,
+            cropEnd,
+            markers,
+            hiddenFrames,
+            fps: atlasSettings.fps,
+            cropBox: atlasSettings.cropBox,
+          }
+        : t
+    );
+
+    const project = await ProjectManager.serializeProject({
+      projectName: `${characterName}_${actionName}`,
+      appMode: mode,
+      exportScope,
+      exportFilename: actionName || exportFilename,
+      keyingSettings,
+      atlasSettings,
+      spritesSettings,
+      tracks: updatedTracks,
+      selectedTrackId,
+      currentFrame,
+      maskFilename,
+      invertMask,
+      embedMedia: true,
+    });
+
+    await ProjectLibraryManager.saveToLibrary(characterName, actionName, project);
+    setExportToast(`✓ Saved "${characterName} → ${actionName}" to Library`);
+    setTimeout(() => setExportToast(null), 4000);
+  };
+
+  const handleAppendActionToMaster = async (project: SpriteForgeProject) => {
+    if (!project.tracks || project.tracks.length === 0) return;
+    const appended: AnimationTrack[] = [];
+    for (const t of project.tracks) {
+      const fileRef = await ProjectManager.reconstructTrackFile(t);
+      appended.push({
+        ...t,
+        id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        fileRef: fileRef || undefined,
+        cropBox: t.cropBox ?? null,
+        enabled: true,
+      });
+    }
+    setTracks((prev) => [...prev, ...appended]);
+    setExportScope('master');
+    setExportToast(`✓ Added ${appended.length} track(s) to Master Set`);
+    setTimeout(() => setExportToast(null), 4000);
+  };
+
   // Export Action
   const handleExport = async () => {
     setIsExporting(true);
@@ -1693,7 +2017,7 @@ export const App: React.FC = () => {
           // --- MASTER ATLAS MULTI-TRACK EXPORT ---
           const currentTracks = tracks.map((t) =>
             t.id === selectedTrackId
-              ? { ...t, cropStart, cropEnd, markers, fps: atlasSettings.fps }
+              ? { ...t, cropStart, cropEnd, markers, hiddenFrames, fps: atlasSettings.fps }
               : t
           );
           const activeTracks = currentTracks.filter((t) => t.enabled && t.fileRef);
@@ -1714,13 +2038,15 @@ export const App: React.FC = () => {
             const tempLoader = new VideoLoader();
             await tempLoader.loadVideoFile(track.fileRef!, track.fps || atlasSettings.fps);
 
-            const trackMarkers = track.markers && track.markers.length > 0 ? track.markers : [0];
+            const trackHidden = track.hiddenFrames || [];
+            const rawMarkers = track.markers && track.markers.length > 0 ? track.markers : [0];
+            const trackMarkers = rawMarkers.filter((f) => !trackHidden.includes(f));
             const trackCanvases: HTMLCanvasElement[] = [];
 
             for (const frameIdx of trackMarkers) {
               const raw = await tempLoader.getFrame(frameIdx);
               if (raw) {
-                const keyed = getKeyedFrameCanvas(raw);
+                const keyed = getKeyedFrameCanvas(raw, frameIdx, track.id);
                 const resized = ImageProcessor.resizeCanvas(
                   keyed,
                   fw,
@@ -1728,6 +2054,9 @@ export const App: React.FC = () => {
                   null,
                   track.cropBox ?? atlasSettings.cropBox
                 );
+                if (atlasSettings.outlineSettings?.enabled) {
+                  ImageProcessor.applyOutline(resized, atlasSettings.outlineSettings);
+                }
                 if (atlasSettings.enableShadow) {
                   ImageProcessor.applyDropShadow(
                     resized,
@@ -1968,16 +2297,17 @@ export const App: React.FC = () => {
 
         // --- SINGLE CLIP EXPORT ---
         const loader = atlasLoaderRef.current;
-        if (loader.metadata.totalFrames <= 0 || markers.length === 0) return;
+        const activeMarkers = markers.filter((f) => !hiddenFrames.includes(f));
+        if (loader.metadata.totalFrames <= 0 || activeMarkers.length === 0) return;
 
         const cols = atlasSettings.columns;
         const rows = atlasSettings.rows;
 
         const frameCanvases: HTMLCanvasElement[] = [];
-        for (const frameIdx of markers) {
+        for (const frameIdx of activeMarkers) {
           const raw = await loader.getFrame(frameIdx);
           if (raw) {
-            const keyed = getKeyedFrameCanvas(raw);
+            const keyed = getKeyedFrameCanvas(raw, frameIdx);
             const resized = ImageProcessor.resizeCanvas(
               keyed,
               fw,
@@ -1985,6 +2315,9 @@ export const App: React.FC = () => {
               null,
               atlasSettings.cropBox
             );
+            if (atlasSettings.outlineSettings?.enabled) {
+              ImageProcessor.applyOutline(resized, atlasSettings.outlineSettings);
+            }
             if (atlasSettings.enableShadow) {
               ImageProcessor.applyDropShadow(
                 resized,
@@ -2434,6 +2767,7 @@ export const App: React.FC = () => {
         canRedo={canRedo}
         onOpenProject={handleOpenProject}
         onSaveProject={handleSaveProject}
+        onOpenLibrary={() => setIsLibraryOpen(true)}
         projectName={projectName}
         isSavingProject={isSavingProject}
       />
@@ -2472,6 +2806,11 @@ export const App: React.FC = () => {
           hasMaskMedia={hasMaskMedia}
           invertMask={invertMask}
           onToggleInvertMask={handleToggleInvertMask}
+          onRunAiMatte={handleRunAiMatte}
+          onClearAiMasks={handleClearAiMasks}
+          isProcessingAiBg={isProcessingAiBg}
+          aiBgProgress={aiBgProgress}
+          aiMasksCount={aiMasksCount}
         />
 
         {/* Left Resizer Handle */}
@@ -2547,6 +2886,19 @@ export const App: React.FC = () => {
             cropBox={atlasSettings.cropBox}
             cropLabel={tracks.find((t) => t.id === selectedTrackId)?.directionLabel}
             onUpdateCropBox={handleUpdateCropBox}
+            retouchTool={retouchTool}
+            setRetouchTool={setRetouchTool}
+            retouchBrushSize={retouchBrushSize}
+            setRetouchBrushSize={setRetouchBrushSize}
+            wandTolerance={wandTolerance}
+            setWandTolerance={setWandTolerance}
+            wandContiguous={wandContiguous}
+            setWandContiguous={setWandContiguous}
+            onMagicWandClick={handleMagicWandClick}
+            onBrushStroke={handleBrushStroke}
+            onResetFrameRetouch={handleResetFrameRetouch}
+            hasFrameRetouch={retouchMasksRef.current.has(getFrameCacheKey(selectedTrackId, currentFrame))}
+            isCurrentFrameHidden={hiddenFrames.includes(currentFrame)}
           />
 
           {/* Timeline */}
@@ -2561,6 +2913,8 @@ export const App: React.FC = () => {
               setCropEnd={setCropEnd}
               markers={markers}
               setMarkers={setMarkers}
+              hiddenFrames={hiddenFrames}
+              onToggleHideFrame={handleToggleHideFrame}
               fps={atlasSettings.fps}
               setFps={(fps) => {
                 setAtlasSettings((prev) => ({ ...prev, fps }));
@@ -2704,6 +3058,24 @@ export const App: React.FC = () => {
       <SupportModal
         isOpen={isSupportOpen}
         onClose={() => setIsSupportOpen(false)}
+      />
+
+      {/* Character -> Actions Project Library Modal */}
+      <ProjectLibraryModal
+        isOpen={isLibraryOpen}
+        onClose={() => setIsLibraryOpen(false)}
+        hasActiveMedia={hasMedia}
+        defaultCharacterName={
+          tracks.find((t) => t.id === selectedTrackId)?.characterName ||
+          exportFilename.replace(/_(idle|walk|run|attack|jump)$/i, '') ||
+          'Hero_Character'
+        }
+        defaultActionName={
+          tracks.find((t) => t.id === selectedTrackId)?.name || 'idle'
+        }
+        onSaveCurrentToLibrary={handleSaveCurrentToLibrary}
+        onLoadProjectFromLibrary={loadProjectState}
+        onAppendActionToMaster={handleAppendActionToMaster}
       />
 
       {/* Export Success Notification Toast */}

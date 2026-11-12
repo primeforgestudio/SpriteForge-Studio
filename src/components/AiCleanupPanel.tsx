@@ -1,19 +1,179 @@
 import React from 'react';
-import { AtlasSettings, PixelArtSettings } from '../core/types';
-import { Anchor, Sparkles, Layers, Crosshair, RefreshCw, Gamepad2 } from 'lucide-react';
+import { AtlasSettings, OutlineSettings } from '../core/types';
+import { Anchor, Sparkles, Layers, Crosshair, RefreshCw, Gamepad2, PenTool } from 'lucide-react';
 
 interface AiCleanupPanelProps {
   settings: AtlasSettings;
   onChange: (settings: AtlasSettings) => void;
 }
 
+const DEFAULT_OUTLINE: OutlineSettings = {
+  enabled: false,
+  mode: 'outer',
+  thickness: 2,
+  color: '#000000',
+  opacity: 100,
+};
+
 export const AiCleanupPanel: React.FC<AiCleanupPanelProps> = ({ settings, onChange }) => {
   const update = <K extends keyof AtlasSettings>(key: K, value: AtlasSettings[K]) => {
     onChange({ ...settings, [key]: value });
   };
 
+  const outline = settings.outlineSettings ?? DEFAULT_OUTLINE;
+  const updateOutline = (patch: Partial<OutlineSettings>) => {
+    update('outlineSettings', { ...outline, ...patch });
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {/* 0. Sprite Outline / Stroke */}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8,
+          padding: '10px 10px',
+          background: 'var(--bg-card)',
+          border: outline.enabled ? '1px solid #FF551F' : '1px solid var(--border-subtle)',
+          borderRadius: 6,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              cursor: 'pointer',
+              fontSize: 11,
+              fontWeight: 600,
+              color: 'var(--text-bright)',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={outline.enabled}
+              onChange={(e) => updateOutline({ enabled: e.target.checked })}
+              style={{ accentColor: '#FF551F', cursor: 'pointer' }}
+            />
+            <PenTool size={13} style={{ color: outline.enabled ? '#FF551F' : 'var(--text-muted)' }} />
+            Sprite Outline (Stroke)
+          </label>
+          <span
+            style={{
+              fontSize: 9,
+              color: outline.enabled ? '#FF551F' : 'var(--text-muted)',
+              background: outline.enabled ? '#2B2D37' : 'transparent',
+              padding: '1px 5px',
+              borderRadius: 4,
+              fontWeight: 600,
+            }}
+          >
+            FX
+          </span>
+        </div>
+
+        <div style={{ fontSize: 10, color: 'var(--text-dim)', lineHeight: 1.3 }}>
+          Adds a crisp outer or inner contour stroke around keyed character silhouettes in Viewport & Atlas.
+        </div>
+
+        {outline.enabled && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 4 }}>
+            {/* Mode Selector */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4 }}>
+              {(['outer', 'inner', 'both'] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => updateOutline({ mode: m })}
+                  style={{
+                    height: 24,
+                    fontSize: 10,
+                    fontWeight: outline.mode === m ? 700 : 500,
+                    borderRadius: 4,
+                    background: outline.mode === m ? '#2B2D37' : 'var(--bg-input)',
+                    border: outline.mode === m ? '1px solid #FF551F' : '1px solid var(--border-subtle)',
+                    color: outline.mode === m ? '#FF551F' : 'var(--text-muted)',
+                    cursor: 'pointer',
+                    textTransform: 'capitalize',
+                  }}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+
+            {/* Thickness Slider */}
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, marginBottom: 3 }}>
+                <span style={{ color: 'var(--text-muted)' }}>Thickness</span>
+                <span style={{ color: '#FF551F', fontFamily: 'monospace', fontWeight: 600 }}>
+                  {outline.thickness}px
+                </span>
+              </div>
+              <input
+                type="range"
+                min={1}
+                max={8}
+                step={1}
+                value={outline.thickness}
+                onChange={(e) => updateOutline({ thickness: Number(e.target.value) })}
+                style={{ width: '100%' }}
+              />
+            </div>
+
+            {/* Opacity Slider */}
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, marginBottom: 3 }}>
+                <span style={{ color: 'var(--text-muted)' }}>Opacity</span>
+                <span style={{ color: '#FF551F', fontFamily: 'monospace', fontWeight: 600 }}>
+                  {outline.opacity}%
+                </span>
+              </div>
+              <input
+                type="range"
+                min={10}
+                max={100}
+                step={5}
+                value={outline.opacity}
+                onChange={(e) => updateOutline({ opacity: Number(e.target.value) })}
+                style={{ width: '100%' }}
+              />
+            </div>
+
+            {/* Color Picker + Swatches */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+              <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Stroke Color</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                {['#000000', '#FFFFFF', '#FF551F', '#F59E0B', '#06B6D4'].map((hex) => (
+                  <button
+                    key={hex}
+                    onClick={() => updateOutline({ color: hex })}
+                    style={{
+                      width: 16,
+                      height: 16,
+                      borderRadius: 3,
+                      background: hex,
+                      border: outline.color.toUpperCase() === hex ? '2px solid #FF551F' : '1px solid #444',
+                      cursor: 'pointer',
+                      padding: 0,
+                    }}
+                    title={hex}
+                  />
+                ))}
+                <input
+                  type="color"
+                  value={outline.color}
+                  onChange={(e) => updateOutline({ color: e.target.value })}
+                  style={{ width: 22, height: 18, padding: 0, border: 'none', background: 'transparent', cursor: 'pointer' }}
+                  title="Custom Outline Color"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* 1. Ground Snap (Baseline Lock) */}
       <div
         style={{

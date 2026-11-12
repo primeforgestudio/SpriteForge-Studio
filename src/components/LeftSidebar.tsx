@@ -63,6 +63,12 @@ interface LeftSidebarProps {
   hasMaskMedia?: boolean;
   invertMask?: boolean;
   onToggleInvertMask?: () => void;
+  // AI Background Removal (No Chroma Key)
+  onRunAiMatte?: (scope: 'current' | 'all') => void;
+  onClearAiMasks?: () => void;
+  isProcessingAiBg?: boolean;
+  aiBgProgress?: { current: number; total: number; stage: string } | null;
+  aiMasksCount?: number;
 }
 
 const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
@@ -96,6 +102,11 @@ const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
   hasMaskMedia = false,
   invertMask = false,
   onToggleInvertMask,
+  onRunAiMatte,
+  onClearAiMasks,
+  isProcessingAiBg = false,
+  aiBgProgress = null,
+  aiMasksCount = 0,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<LeftSidebarTab>('media');
@@ -727,6 +738,11 @@ const LeftSidebarComponent: React.FC<LeftSidebarProps> = ({
               eyedropperTarget={eyedropperTarget}
               setEyedropperTarget={setEyedropperTarget}
               onAutoDetectKey={onAutoDetectKey}
+              onRunAiMatte={onRunAiMatte}
+              onClearAiMasks={onClearAiMasks}
+              isProcessingAiBg={isProcessingAiBg}
+              aiBgProgress={aiBgProgress}
+              aiMasksCount={aiMasksCount}
             />
           </div>
         )}

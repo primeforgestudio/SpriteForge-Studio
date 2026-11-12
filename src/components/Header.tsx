@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { AppMode, BackgroundMode } from '../core/types';
-import { UploadCloud, Settings as SettingsIcon, Undo2, Redo2, Heart, FolderOpen, Save } from 'lucide-react';
+import { UploadCloud, Settings as SettingsIcon, Undo2, Redo2, Heart, FolderOpen, Save, FolderKanban } from 'lucide-react';
 
 interface HeaderProps {
   mode: AppMode;
@@ -24,6 +24,7 @@ interface HeaderProps {
   canRedo?: boolean;
   onOpenProject?: () => void;
   onSaveProject?: () => void;
+  onOpenLibrary?: () => void;
   projectName?: string;
   isSavingProject?: boolean;
 }
@@ -40,6 +41,7 @@ const HeaderComponent: React.FC<HeaderProps> = ({
   canRedo = false,
   onOpenProject,
   onSaveProject,
+  onOpenLibrary,
   projectName,
   isSavingProject = false,
 }) => {
@@ -149,6 +151,29 @@ const HeaderComponent: React.FC<HeaderProps> = ({
             marginLeft: 2,
           }}
         >
+          {onOpenLibrary && (
+            <button
+              onClick={onOpenLibrary}
+              title="Character & Actions Library"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '3px 7px',
+                fontSize: 11,
+                fontWeight: 600,
+                color: 'var(--text-bright)',
+                background: 'transparent',
+                border: 'none',
+                borderRadius: 4,
+                cursor: 'pointer',
+              }}
+            >
+              <FolderKanban size={13} style={{ color: '#10B981' }} />
+              <span>Library</span>
+            </button>
+          )}
+
           {onOpenProject && (
             <button
               onClick={onOpenProject}

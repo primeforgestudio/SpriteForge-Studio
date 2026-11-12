@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { ChromaKeySettings } from '../core/types';
-import { Pipette, Wand2, Sparkles, Bookmark, Plus, Trash2, Check, ShieldCheck } from 'lucide-react';
+import { ChromaKeySettings, BackgroundRemovalMode } from '../core/types';
+import { Pipette, Wand2, Sparkles, Bookmark, Plus, Trash2, Check, ShieldCheck, Cpu, Zap } from 'lucide-react';
 
 interface ChromaKeyPanelProps {
   settings: ChromaKeySettings;
@@ -10,6 +10,12 @@ interface ChromaKeyPanelProps {
   eyedropperTarget?: 'primary' | 'secondary';
   setEyedropperTarget?: (target: 'primary' | 'secondary') => void;
   onAutoDetectKey?: () => void;
+  // AI Background Removal (No Chroma Key)
+  onRunAiMatte?: (scope: 'current' | 'all') => void;
+  onClearAiMasks?: () => void;
+  isProcessingAiBg?: boolean;
+  aiBgProgress?: { current: number; total: number; stage: string } | null;
+  aiMasksCount?: number;
 }
 
 const ChromaKeyPanelComponent: React.FC<ChromaKeyPanelProps> = ({
@@ -20,6 +26,11 @@ const ChromaKeyPanelComponent: React.FC<ChromaKeyPanelProps> = ({
   eyedropperTarget = 'primary',
   setEyedropperTarget,
   onAutoDetectKey,
+  onRunAiMatte,
+  onClearAiMasks,
+  isProcessingAiBg = false,
+  aiBgProgress = null,
+  aiMasksCount = 0,
 }) => {
   const [customPresets, setCustomPresets] = useState<
     Array<{ id: string; name: string; settings: Partial<ChromaKeySettings> }>
@@ -198,8 +209,173 @@ const ChromaKeyPanelComponent: React.FC<ChromaKeyPanelProps> = ({
     </div>
   );
 
+  const activeMode: BackgroundRemovalMode = settings.removalMode || 'chromakey';
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* Background Removal Engine Selector */}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 6,
+          padding: '8px 10px',
+          background: 'var(--bg-card)',
+          borderRadius: 8,
+          border: '1px solid var(--border-subtle)',
+        }}
+      >
+        <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+          Background Removal Engine
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4 }}>
+          {(
+            [
+              { id: 'chromakey', label: 'Chroma', icon: <Wand2 size={11} /> },
+              { id: 'ai_neural', label: 'AI Neural', icon: <Cpu size={11} /> },
+              { id: 'smart_flood', label: 'Smart Flood', icon: <Zap size={11} /> },
+            ] as const
+          ).map((m) => {
+            const isSel = activeMode === m.id;
+            return (
+              <button
+                key={m.id}
+                onClick={() => update('removalMode', m.id)}
+                style={{
+                  height: 28,
+                  padding: '0 4px',
+                  fontSize: 10,
+                  fontWeight: isSel ? 700 : 500,
+                  borderRadius: 5,
+                  background: isSel ? '#2B2D37' : 'var(--bg-input)',
+                  border: isSel ? '1px solid #FF551F' : '1px solid var(--border-subtle)',
+                  color: isSel ? '#FF551F' : 'var(--text-muted)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 4,
+                  cursor: 'pointer',
+                }}
+              >
+                {m.icon}
+                <span>{m.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* AI Neural / Smart Flood Non-Chroma Controls */}
+        {activeMode !== 'chromakey' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4, paddingTop: 6, borderTop: '1px solid var(--border-subtle)' }}>
+            <div style={{ fontSize: 10, color: 'var(--text-dim)', lineHeight: 1.35 }}>
+              {activeMode === 'ai_neural'
+                ? 'Uses local ISNet Neural Network (ONNX) to isolate characters from complex or textured backgrounds without green screen.'
+                : 'Instant offline edge-aware border flood-fill segmentation. Great for clean studio or gradient backgrounds.'}
+            </div>
+
+            {activeMode === 'smart_flood' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10 }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Flood Tolerance</span>
+                  <span style={{ color: '#FF551F', fontFamily: 'monospace', fontWeight: 600 }}>
+                    {settings.smartFloodTolerance ?? 28}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={5}
+                  max={80}
+                  value={settings.smartFloodTolerance ?? 28}
+                  onChange={(e) => update('smartFloodTolerance', Number(e.target.value))}
+                  style={{ width: '100%' }}
+                />
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 5 }}>
+              <button
+                onClick={() => onRunAiMatte?.('current')}
+                disabled={isProcessingAiBg}
+                style={{
+                  flex: 1,
+                  height: 28,
+                  borderRadius: 5,
+                  background: '#2B2D37',
+                  border: '1px solid #FF551F',
+                  color: '#FF551F',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  cursor: isProcessingAiBg ? 'wait' : 'pointer',
+                }}
+                title="Remove background on current frame"
+              >
+                ✨ Current Frame
+              </button>
+              <button
+                onClick={() => onRunAiMatte?.('all')}
+                disabled={isProcessingAiBg}
+                style={{
+                  flex: 1.2,
+                  height: 28,
+                  borderRadius: 5,
+                  background: '#FF551F',
+                  border: 'none',
+                  color: '#ffffff',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  cursor: isProcessingAiBg ? 'wait' : 'pointer',
+                }}
+                title="Batch process all timeline keyframes"
+              >
+                🎬 All Keyframes
+              </button>
+            </div>
+
+            {isProcessingAiBg && aiBgProgress && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#FF551F', fontWeight: 600 }}>
+                  <span>{aiBgProgress.stage}</span>
+                  <span>
+                    {aiBgProgress.current} / {aiBgProgress.total}
+                  </span>
+                </div>
+                <div style={{ width: '100%', height: 5, background: '#121316', borderRadius: 3, overflow: 'hidden' }}>
+                  <div
+                    style={{
+                      width: `${Math.round((aiBgProgress.current / Math.max(1, aiBgProgress.total)) * 100)}%`,
+                      height: '100%',
+                      background: '#FF551F',
+                      transition: 'width 0.15s ease',
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {aiMasksCount > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 10 }}>
+                <span style={{ color: '#10B981', fontWeight: 600 }}>
+                  ✓ {aiMasksCount} AI frame masks cached
+                </span>
+                <button
+                  onClick={onClearAiMasks}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#ef4444',
+                    fontSize: 10,
+                    cursor: 'pointer',
+                    textDecoration: 'underline',
+                  }}
+                >
+                  Clear Masks
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Section Header */}
       <div className="sidebar-section-title">Chroma Key</div>
 
