@@ -8,6 +8,7 @@ import {
   SpritesSettings,
   AppMode,
   ExportScope,
+  BackgroundMode,
 } from './types';
 
 export interface NativeProjectDialogResult {
@@ -94,6 +95,8 @@ export class ProjectManager {
     currentFrame: number;
     maskFilename?: string;
     invertMask?: boolean;
+    bgMode?: BackgroundMode;
+    bgColor?: [number, number, number];
     embedMedia?: boolean; // Embed source video/images directly into project (default true for files < 35MB)
   }): Promise<SpriteForgeProject> {
     const {
@@ -109,6 +112,8 @@ export class ProjectManager {
       currentFrame,
       maskFilename,
       invertMask,
+      bgMode,
+      bgColor,
       embedMedia = true,
     } = params;
 
@@ -162,6 +167,8 @@ export class ProjectManager {
       currentFrame,
       maskFilename,
       invertMask,
+      bgMode,
+      bgColor,
     };
   }
 

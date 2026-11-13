@@ -300,4 +300,6 @@ export interface SpriteForgeProject {
   currentFrame?: number;
   maskFilename?: string;
   invertMask?: boolean;
+  bgMode?: BackgroundMode;
+  bgColor?: [number, number, number];
 }

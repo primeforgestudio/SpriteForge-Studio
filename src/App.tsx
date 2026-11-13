@@ -47,10 +47,10 @@ import { SupportModal } from './components/SupportModal';
 import { ProjectLibraryModal } from './components/ProjectLibraryModal';
 
 export const App: React.FC = () => {
-  // App Mode & Settings
+  // App Mode & Settings (Default to transparent checkerboard for clean cutout display)
   const [mode, setMode] = useState<AppMode>('atlas');
-  const [bgMode, setBgMode] = useState<BackgroundMode>('solid');
-  const [bgColor, setBgColor] = useState<[number, number, number]>([35, 60, 48]); // Muted green matching screenshot
+  const [bgMode, setBgMode] = useState<BackgroundMode>('checkerboard');
+  const [bgColor, setBgColor] = useState<[number, number, number]>([0, 240, 132]);
   const [bgPresets, setBgPresets] = useState<[number, number, number][]>(DEFAULT_BG_PRESETS);
 
   const [keyingSettings, setKeyingSettings] = useState(DEFAULT_KEYING);
@@ -1503,7 +1503,7 @@ export const App: React.FC = () => {
         setCropEnd(range);
         setCurrentFrame(0);
         setMarkers(initialMarkers);
-        renderAtlasFrame(0);
+        await renderAtlasFrame(0, false);
 
         // Refresh atlas preview
         updateAtlasPreview();
@@ -1774,6 +1774,8 @@ export const App: React.FC = () => {
       if (project.spritesSettings) setSpritesSettings(project.spritesSettings);
       if (project.maskFilename !== undefined) setMaskFilename(project.maskFilename);
       if (project.invertMask !== undefined) setInvertMask(project.invertMask);
+      setBgMode(project.bgMode || 'checkerboard');
+      if (project.bgColor) setBgColor(project.bgColor);
 
       // Reconstruct tracks and media
       const restoredTracks: AnimationTrack[] = [];
@@ -1868,6 +1870,8 @@ export const App: React.FC = () => {
         currentFrame,
         maskFilename,
         invertMask,
+        bgMode,
+        bgColor,
         embedMedia: true,
       });
 
@@ -1947,6 +1951,7 @@ export const App: React.FC = () => {
     retouchMasksRef.current.clear();
     aiAlphaMasksRef.current.clear();
     setAiMasksCount(0);
+    setBgMode('checkerboard');
     setShowHomeScreen(false);
   };
 
